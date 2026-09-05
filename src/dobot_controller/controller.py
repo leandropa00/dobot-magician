@@ -98,7 +98,8 @@ class DobotController:
         y: Optional[float] = None,
         z: Optional[float] = None,
         r: Optional[float] = None,
-        wait: bool = True
+        wait: bool = True,
+        mode: Optional[int] = None
     ) -> int:
         """Mueve el robot a la posición cartesiana indicada (mm y grados)."""
         current = self.get_pose()
@@ -110,13 +111,11 @@ class DobotController:
         if self.enforce_safety:
             SafetyLimits.enforce(target_x, target_y, target_z, target_r)
 
-        return self.raw_device.move_to(
-            x=target_x,
-            y=target_y,
-            z=target_z,
-            r=target_r,
-            wait=wait
-        )
+        kwargs = {"x": target_x, "y": target_y, "z": target_z, "r": target_r, "wait": wait}
+        if mode is not None:
+            kwargs["mode"] = mode
+
+        return self.raw_device.move_to(**kwargs)
 
     def move_rel(
         self,
@@ -124,7 +123,8 @@ class DobotController:
         dy: float = 0.0,
         dz: float = 0.0,
         dr: float = 0.0,
-        wait: bool = True
+        wait: bool = True,
+        mode: Optional[int] = None
     ) -> int:
         """Mueve el robot de forma relativa respecto a su posición actual."""
         current = self.get_pose()
@@ -136,13 +136,11 @@ class DobotController:
         if self.enforce_safety:
             SafetyLimits.enforce(target_x, target_y, target_z, target_r)
 
-        return self.raw_device.move_to(
-            x=target_x,
-            y=target_y,
-            z=target_z,
-            r=target_r,
-            wait=wait
-        )
+        kwargs = {"x": target_x, "y": target_y, "z": target_z, "r": target_r, "wait": wait}
+        if mode is not None:
+            kwargs["mode"] = mode
+
+        return self.raw_device.move_to(**kwargs)
 
     def home(self):
         """Ejecuta la calibración a posición HOME."""

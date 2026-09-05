@@ -115,3 +115,34 @@ def test_cli_demo_mock():
     result = runner.invoke(app, ["demo", "--mock"])
     assert result.exit_code == 0
     assert "Demostración finalizada exitosamente" in result.stdout
+
+
+def test_drawing_paths_geometry():
+    from dobot_controller.drawing import generate_smiley_paths
+    paths = generate_smiley_paths(center_x=220.0, center_y=0.0, radius=30.0)
+    assert "Contorno" in paths
+    assert "Ojo Izquierdo" in paths
+    assert "Ojo Derecho" in paths
+    assert "Sonrisa" in paths
+
+    for name, points in paths.items():
+        assert len(points) >= 10
+        for px, py in points:
+            # Todas las coordenadas deben estar dentro de la envolvente segura
+            valid, _ = SafetyLimits.validate_cartesian(px, py, z=0.0)
+            assert valid is True
+
+
+def test_draw_smiley_face_mock():
+    from dobot_controller.drawing import draw_smiley_face
+    with DobotController(mock=True) as bot:
+        draw_smiley_face(bot, center_x=220.0, center_y=0.0, radius=30.0, z_draw=0.0, z_hover=15.0)
+        # Debe haber ejecutado múltiples movimientos lineales y de aproximación
+        assert len(bot.raw_device.command_history) > 40
+
+
+def test_cli_draw_face_mock():
+    result = runner.invoke(app, ["draw-face", "--mock"])
+    assert result.exit_code == 0
+    assert "Carita feliz dibujada exitosamente" in result.stdout
+

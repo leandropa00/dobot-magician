@@ -166,6 +166,102 @@ def demo_cmd(
         console.print(f"[red]Error durante la demostración:[/red] {e}")
 
 
+@app.command("draw-face")
+def draw_face_cmd(
+    z_draw: float = typer.Option(0.0, "--z-draw", "-z", help="Altura Z (mm) de contacto del marcador sobre el papel"),
+    z_hover: float = typer.Option(15.0, "--z-hover", help="Altura Z (mm) de levante del marcador en el aire"),
+    radius: float = typer.Option(30.0, "--radius", "-r", help="Radio de la carita en mm"),
+    cx: float = typer.Option(220.0, "--cx", help="Coordenada X del centro de la carita en mm"),
+    cy: float = typer.Option(0.0, "--cy", help="Coordenada Y del centro de la carita en mm"),
+    air_draw: bool = typer.Option(False, "--air-draw", help="Dibujar en el aire para verificar sin tocar el papel"),
+    velocity: float = typer.Option(35.0, "--speed", "-v", help="Velocidad lineal de dibujo en mm/s"),
+    mock: bool = typer.Option(False, "--mock", "-m", help="Ejecutar en modo simulación"),
+    port: Optional[str] = typer.Option(None, "--port", "-p", help="Puerto serie")
+):
+    """Dibuja una carita feliz usando el marcador montado en el robot."""
+    actual_z_draw = 35.0 if air_draw else z_draw
+    actual_z_hover = 45.0 if air_draw else z_hover
+
+    mode_title = "AIR DRAW (Prueba en el aire)" if air_draw else ("SIMULACIÓN" if mock else "HARDWARE REAL")
+    console.print(Panel(f"[bold magenta]Dibujando Carita Feliz ({mode_title})[/bold magenta]"))
+    console.print(f"• Centro: ({cx}, {cy}) mm | Radio: {radius} mm")
+    console.print(f"• Altura de trazo (Z_draw): {actual_z_draw} mm | Altura de tránsito (Z_hover): {actual_z_hover} mm")
+    console.print(f"• Velocidad: {velocity} mm/s\n")
+
+    try:
+        from dobot_controller.drawing import draw_smiley_face
+
+        with DobotController(port=port, mock=mock) as bot:
+            def on_status(msg: str):
+                console.print(f"[cyan]➜[/cyan] {msg}")
+
+            draw_smiley_face(
+                bot=bot,
+                center_x=cx,
+                center_y=cy,
+                radius=radius,
+                z_draw=actual_z_draw,
+                z_hover=actual_z_hover,
+                velocity=velocity,
+                acceleration=velocity,
+                status_callback=on_status
+            )
+            console.print("\n[bold green]✔ ¡Carita feliz dibujada exitosamente![/bold green]")
+    except SafetyBoundaryError as sbe:
+        console.print(f"[bold red]Límite de seguridad alcanzado:[/bold red] {sbe}")
+    except Exception as e:
+        console.print(f"[bold red]Error durante el dibujo:[/bold red] {e}")
+
+
+@app.command("calibrate-pen")
+def calibrate_pen_cmd(
+    start_z: float = typer.Option(40.0, "--start-z", help="Altura Z inicial segura"),
+    cx: float = typer.Option(220.0, "--cx", help="Coordenada X del centro"),
+    cy: float = typer.Option(0.0, "--cy", help="Coordenada Y del centro"),
+    port: Optional[str] = typer.Option(None, "--port", "-p", help="Puerto serie"),
+    mock: bool = typer.Option(False, "--mock", "-m", help="Modo simulación")
+):
+    """Herramienta interactiva para calibrar la altura Z exacta de contacto del marcador sobre el papel."""
+    console.print(Panel("[bold yellow]Calibración Interactiva de Altura Z para Marcador[/bold yellow]"))
+    console.print("El robot se posicionará en el centro y te permitirá bajar el marcador paso a paso")
+    console.print("hasta que la punta toque ligeramente el papel.\n")
+
+    try:
+        with DobotController(port=port, mock=mock) as bot:
+            curr_z = start_z
+            bot.move_to(x=cx, y=cy, z=curr_z, wait=True)
+            console.print(f"Robot posicionado en X={cx}, Y={cy}, Z={curr_z} mm.")
+            console.print("[dim]Usa comandos: -5 (baja 5mm), -1 (baja 1mm), -0.2 (baja 0.2mm), +1 (sube 1mm), ok (finalizar y guardar)[/dim]")
+
+            while True:
+                console.print(f"\n[bold]Altura Z actual: [cyan]{curr_z:.2f} mm[/cyan][/bold]")
+                cmd = input("Acción [-5 / -1 / -0.2 / +1 / +5 / ok / salir]: ").strip().lower()
+
+                if cmd in ("ok", "guardar", "listo", "done"):
+                    console.print(f"\n[bold green]✔ Calibración finalizada. Tu altura de contacto es Z = {curr_z:.2f} mm[/bold green]")
+                    console.print(f"Para dibujar, ejecuta:")
+                    console.print(f"  [bold cyan]dobot draw-face --z-draw {curr_z:.2f} --z-hover {curr_z + 15.0:.2f}[/bold cyan]")
+                    # Subir marcador antes de salir
+                    bot.move_to(x=cx, y=cy, z=curr_z + 20.0, wait=True)
+                    break
+                elif cmd in ("salir", "exit", "q", "cancel"):
+                    console.print("[yellow]Calibración cancelada.[/yellow]")
+                    bot.move_to(x=cx, y=cy, z=curr_z + 20.0, wait=True)
+                    break
+                else:
+                    try:
+                        delta = float(cmd)
+                        new_z = round(curr_z + delta, 2)
+                        bot.move_to(x=cx, y=cy, z=new_z, wait=True)
+                        curr_z = new_z
+                    except ValueError:
+                        console.print("[red]Opción no válida. Escribe un número (ej. -1 o +0.5) o 'ok' para guardar.[/red]")
+                    except SafetyBoundaryError as sbe:
+                        console.print(f"[red]Límite de seguridad alcanzado:[/red] {sbe}")
+    except Exception as e:
+        console.print(f"[red]Error durante la calibración:[/red] {e}")
+
+
 def main():
     app()
 
