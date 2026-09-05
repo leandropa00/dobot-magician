@@ -7,10 +7,13 @@ Este proyecto proporciona un entorno modular, seguro y listo para producción pa
 ## 🚀 Características
 
 - **Control Cartesiano y Articular:** Movimientos absolutos (`move_to`) y relativos (`move_rel`), homing (`home`) y lectura en tiempo real de coordenadas y articulaciones (`get_pose`).
+- **Modos PTP Configurables:** Soporte para movimiento lineal (`MOVL_XYZ`) y articular (`MOVJ_XYZ`).
+- **Dibujo con Marcador y Trayectorias Suaves:** Módulo de dibujo para trazos vectoriales sobre papel, generador geométrico (caritas felices, círculos, arcos), control de cota de contacto (`z_draw`) y cota de tránsito en el aire (`z_hover`).
+- **Asistente de Calibración de Marcador:** Comando interactivo para hallar la altura milimétrica exacta donde la punta toca el papel sin dañar el marcador ni el robot.
 - **Control de Efectores:** Soporte para ventosa de succión neumática (`suck`) y pinza/gripper (`grip`).
 - **Sistema de Seguridad Integrado (`SafetyLimits`):** Verifica automáticamente que las coordenadas solicitadas no excedan el radio físico de trabajo (160 mm a 330 mm) ni bajen de cotas peligrosas para la mesa (evita colisiones mecánicas).
 - **Modo Simulación / Mock:** Permite desarrollar, probar algoritmos y ejecutar scripts sin necesidad de tener el robot físico conectado (`mock=True` o flag `--mock`).
-- **CLI Amigable con Rich:** Comandos de consola `dobot scan`, `dobot status`, `dobot move`, `dobot suction`, `dobot demo`.
+- **CLI Amigable con Rich:** Comandos de consola `dobot scan`, `dobot status`, `dobot move`, `dobot suction`, `dobot demo`, `dobot draw-face`, `dobot calibrate-pen`.
 - **Reglas udev para Ubuntu:** Configuración automática de permisos de acceso serie sin requerir `sudo`.
 
 ---
@@ -24,17 +27,19 @@ dobot-magician/
 │   ├── 01_scan_ports.py        # Diagnóstico y detección de puertos USB
 │   ├── 02_basic_movement.py    # Movimientos cartesianos básicos y relativos
 │   ├── 03_pick_and_place.py    # Rutina completa de agarre y depósito
-│   └── 04_mock_simulation.py   # Simulación y validación de límites de seguridad
+│   ├── 04_mock_simulation.py   # Simulación y validación de límites de seguridad
+│   └── 05_draw_smiley.py       # Trazado de carita feliz con marcador
 ├── src/
 │   └── dobot_controller/
 │       ├── __init__.py
 │       ├── cli.py              # Línea de comandos (Typer + Rich)
 │       ├── connection.py       # Detección y filtrado de puertos serie / permisos
 │       ├── controller.py       # DobotController de alto nivel con Context Manager
+│       ├── drawing.py          # Generador de trayectorias y rutinas de dibujo
 │       ├── mock.py             # Simulador en memoria del robot
 │       └── safety.py           # Validaciones de límites geométricos
 ├── tests/
-│   └── test_dobot_controller.py# Suite de pruebas unitarias con pytest
+│   └── test_dobot_controller.py# Suite de 14 pruebas unitarias con pytest
 ├── udev/
 │   └── 99-dobot.rules          # Reglas udev para CP210x y CH340
 ├── pyproject.toml              # Definición del paquete e instalador pip
@@ -121,6 +126,25 @@ dobot demo
 dobot demo --mock
 ```
 
+### 7. Calibrar la altura de contacto del marcador
+Si no conoces la altura exacta $Z$ donde el marcador toca la hoja de papel, ejecuta el asistente interactivo:
+```bash
+dobot calibrate-pen
+```
+Te permite descender milimétricamente el marcador (`-5`, `-1`, `-0.2`) hasta hacer contacto ligero, e imprime la altura óptima.
+
+### 8. Dibujar la Carita Feliz
+```bash
+# Prueba segura en el aire (a 35 mm sobre la mesa, sin tocar papel):
+dobot draw-face --air-draw
+
+# Dibujar sobre papel con la altura Z calibrada (ej. Z = 0 mm):
+dobot draw-face --z-draw 0.0 --z-hover 15.0
+
+# O en modo simulación (sin conectar hardware):
+dobot draw-face --mock
+```
+
 ---
 
 ## 🐍 Uso desde Python (API)
@@ -141,6 +165,30 @@ with DobotController() as bot:
 
     # Desplazamiento relativo (+30 mm en eje Y)
     bot.move_rel(dy=30.0, wait=True)
+```
+
+### Dibujar una Carita Feliz con el Marcador
+
+```python
+from dobot_controller import DobotController
+from dobot_controller.drawing import draw_smiley_face
+
+with DobotController() as bot:
+    draw_smiley_face(
+        bot=bot,
+        center_x=220.0,       # Centro en X (mm)
+        center_y=0.0,         # Centro en Y (mm)
+        radius=30.0,          # Radio de la cara (mm)
+        z_draw=0.0,           # Altura de contacto sobre papel
+        z_hover=15.0,         # Altura para levantar el marcador en el aire
+        velocity=35.0         # Velocidad lineal de dibujo (mm/s)
+    )
+```
+
+O ejecutando directamente el script de ejemplo:
+```bash
+python examples/05_draw_smiley.py --air-draw
+python examples/05_draw_smiley.py --z-draw 0.0
 ```
 
 ### Rutina de Pick & Place
@@ -178,4 +226,9 @@ Ejecuta el script de pruebas automatizado:
 ./run_tests.sh
 ```
 
-Todas las pruebas validan la geometría de trabajo, límites de seguridad, el simulador Mock, efectores y la interfaz de línea de comandos.
+Las 14 pruebas unitarias validan:
+- Geometría de trabajo y límites de seguridad (`SafetyLimits`).
+- Intercepción de posiciones fuera de alcance o peligrosas para la mesa.
+- Simulador en memoria (`MockDobot`) y control de efectores (succión y gripper).
+- Generación de trayectorias geométricas de dibujo (cabeza, ojos, sonrisa).
+- Comandos CLI (`scan`, `status`, `move`, `demo`, `draw-face`).
