@@ -15,14 +15,29 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Modelo por defecto
-DEFAULT_CLAUDE_MODEL: str = "claude-sonnet-5-20260630"
+# Modelo por defecto (oficial en la API de Anthropic)
+DEFAULT_CLAUDE_MODEL: str = "claude-sonnet-5"
+
+# Mapeo de alias y nombres comunes al ID exacto reconocido por la API de Anthropic
+MODEL_ALIASES: Dict[str, str] = {
+    "claude-sonnet-5-20260630": "claude-sonnet-5",
+    "claude-sonnet-5-latest": "claude-sonnet-5",
+    "sonnet-5": "claude-sonnet-5",
+    "sonnet 5": "claude-sonnet-5",
+    "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
+    "claude-sonnet-4-5-latest": "claude-sonnet-4-5-20250929",
+    "claude-3-7-sonnet-latest": "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-latest": "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-latest": "claude-3-5-haiku-20241022",
+}
 
 # Modelos oficiales de Anthropic con capacidades multimodales (Visión + Tool Use) permitidos
 ALLOWED_CLAUDE_MODELS: Dict[str, str] = {
-    "claude-sonnet-5-20260630": "Claude Sonnet 5 (Última generación: razonamiento agéntico y visión avanzada)",
-    "claude-sonnet-5": "Claude Sonnet 5",
-    "claude-sonnet-5-latest": "Claude Sonnet 5 Latest",
+    "claude-sonnet-5": "Claude Sonnet 5 (Última generación: razonamiento agéntico y visión avanzada)",
+    "claude-sonnet-5-20260630": "Claude Sonnet 5 (Alias)",
+    "claude-sonnet-5-latest": "Claude Sonnet 5 Latest (Alias)",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6",
+    "claude-opus-5": "Claude Opus 5",
     "claude-sonnet-4-5-20250929": "Claude Sonnet 4.5 (Máxima fidelidad y trazos estilizados)",
     "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet (Razonamiento visual avanzado y síntesis espacial)",
     "claude-3-7-sonnet-latest": "Claude 3.7 Sonnet Latest",
@@ -42,13 +57,15 @@ def resolve_claude_model(requested_model: Optional[str] = None) -> str:
     1. requested_model (si se especifica explícitamente y no está vacío)
     2. Variable de entorno ANTHROPIC_MODEL (definida en el sistema o en el archivo .env)
     3. Variable de entorno DOBOT_VISION_MODEL (alias alternativo)
-    4. DEFAULT_CLAUDE_MODEL ("claude-sonnet-4-5-20250929")
+    4. DEFAULT_CLAUDE_MODEL ("claude-sonnet-5")
+    Aplica normalización de alias automáticos para evitar errores 404 de la API.
     """
     load_dotenv(override=False)
     env_model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("DOBOT_VISION_MODEL")
-    model = (requested_model or env_model or DEFAULT_CLAUDE_MODEL).strip()
+    raw_model = (requested_model or env_model or DEFAULT_CLAUDE_MODEL).strip()
+    model = MODEL_ALIASES.get(raw_model.lower(), raw_model)
 
-    if model not in ALLOWED_CLAUDE_MODELS:
+    if model not in ALLOWED_CLAUDE_MODELS and raw_model not in ALLOWED_CLAUDE_MODELS:
         logger.warning(
             f"El modelo '{model}' no está en la lista estándar de modelos testeados "
             f"({', '.join(ALLOWED_CLAUDE_MODELS.keys())}), pero se intentará utilizar con Anthropic API."

@@ -95,29 +95,36 @@ def draw_stroke(
 ):
     """
     Traza una línea continua (stroke):
-    1. Se posiciona en el aire sobre el primer punto (z_hover)
-    2. Baja el marcador sobre el papel (z_draw)
-    3. Traza de forma lineal (MOVL_XYZ) punto por punto
-    4. Levanta el marcador al aire (z_hover)
+    1. Si no está posicionado sobre el primer punto a la altura z_draw, transita en el aire (z_hover) y baja (z_draw).
+       Si ya está en el primer punto a z_draw, dibuja directamente sin subir en Z.
+    2. Traza linealmente (MOVL_XYZ) punto por punto a z_draw, conservando la altura configurada.
+    3. Levanta el marcador al aire (z_hover) solo al concluir el trazo para desplazarse al siguiente.
     """
     if not points:
         return
 
     first_x, first_y = points[0]
+    cur = bot.get_pose()
 
-    # 1. Posicionamiento en el aire sobre el inicio del trazo
-    bot.move_to(x=first_x, y=first_y, z=z_hover, wait=True, mode=MODE_PTP.MOVJ_XYZ)
+    # Si ya se encuentra en el primer punto del trazo a la altura de dibujo Z_draw, no elevar en Z
+    already_at_start = (
+        math.hypot(cur["x"] - first_x, cur["y"] - first_y) < 1.0 and
+        abs(cur["z"] - z_draw) < 1.0
+    )
 
-    # 2. Bajar marcador al papel
-    bot.move_to(x=first_x, y=first_y, z=z_draw, wait=True, mode=MODE_PTP.MOVL_XYZ)
+    if not already_at_start:
+        # 1. Posicionamiento en el aire sobre el inicio del trazo
+        bot.move_to(x=first_x, y=first_y, z=z_hover, wait=True, mode=MODE_PTP.MOVJ_XYZ)
+        # 2. Bajar marcador al papel conservando estrictamente la altura Z_draw configurada
+        bot.move_to(x=first_x, y=first_y, z=z_draw, wait=True, mode=MODE_PTP.MOVL_XYZ)
 
-    # 3. Dibujar todos los puntos subsecuentes linealmente
+    # 3. Dibujar todos los puntos subsecuentes linealmente a z_draw
     for idx, (px, py) in enumerate(points[1:], start=1):
         bot.move_to(x=px, y=py, z=z_draw, wait=True, mode=MODE_PTP.MOVL_XYZ)
         if progress_callback and idx % 4 == 0:
             progress_callback(f"Punto {idx}/{len(points)}")
 
-    # 4. Levantar marcador al aire
+    # 4. Levantar marcador al aire al concluir el trazo
     last_x, last_y = points[-1]
     bot.move_to(x=last_x, y=last_y, z=z_hover, wait=True, mode=MODE_PTP.MOVL_XYZ)
 

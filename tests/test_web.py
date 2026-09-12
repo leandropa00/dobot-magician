@@ -32,6 +32,8 @@ def test_index_page(client):
     assert response.status_code == 200
     assert "Dobot Magician" in response.text
     assert "btnCapturePhoto" in response.text
+    assert "btnToggleFov" in response.text
+    assert "fovBadge" in response.text
     assert "btnSendToModel" in response.text
     assert "btnConfirmAndDraw" in response.text
     assert "btnSetOriginFromCurrent" in response.text
@@ -109,6 +111,8 @@ def test_set_origin_and_start_drawing_from_point(client):
     assert res_sketch.status_code == 200
     sketch = res_sketch.json()
     assert sketch["success"] is True
+    assert sketch["fallback"] is True  # En entorno de prueba sin API key se usa el fallback
+    assert sketch["model_used"] == "claude-sonnet-5"
     assert sketch["stroke_count"] > 0
     assert "preview_image" in sketch
     assert sketch["preview_image"].startswith("data:image/png;base64,")
@@ -201,6 +205,40 @@ def test_start_drawing_preserves_z_height(client):
     client.post("/api/stop-drawing")
 
 
+def test_start_drawing_conserves_persisted_origin_without_payload(client):
+    """
+    Verifica que al invocar /api/start-drawing sin cuerpo o parámetros de origen,
+    se utilice estrictamente el origen configurado y persistido en el servidor.
+    """
+    # 1. Establecer origen persistido con Z=-42.5
+    client.post("/api/robot/set-origin", json={
+        "x": 230.0,
+        "y": 10.0,
+        "z_draw": -42.5,
+        "z_hover": -27.5
+    })
+
+    # 2. Generar boceto
+    import numpy as np
+    import cv2
+    dummy_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
+    _, buffer = cv2.imencode(".jpg", dummy_frame)
+    b64_img = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
+    client.post("/api/generate-sketch", json={"image": b64_img})
+
+    # 3. Iniciar dibujo sin especificar origen (llamada estándar desde la UI)
+    res_draw = client.post("/api/start-drawing")
+    assert res_draw.status_code == 200
+    data = res_draw.json()
+    assert data["status"] == "started"
+    # Debe conservar estrictamente el Z configurado y persistido (-42.5)
+    assert data["origin"]["z_draw"] == -42.5
+    assert data["origin"]["z_hover"] == -27.5
+
+    # 4. Detener dibujo
+    client.post("/api/stop-drawing")
+
+
 def test_web_status_reports_env_model(client, monkeypatch):
     """Verifica que /api/status reporte el modelo configurado en ANTHROPIC_MODEL."""
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219")
@@ -208,6 +246,34 @@ def test_web_status_reports_env_model(client, monkeypatch):
     assert res.status_code == 200
     data = res.json()
     assert data["model"] == "claude-3-7-sonnet-20250219"
+
+
+def test_camera_fov_endpoints(client):
+    """Verifica la consulta y alternancia del campo de visión (FOV) vía API REST."""
+    # 1. Obtener estado inicial
+    res_get = client.get("/api/camera/fov")
+    assert res_get.status_code == 200
+    data_get = res_get.json()
+    assert data_get["status"] == "ok"
+    assert data_get["fov"] in ("linear", "wide")
+
+    # 2. Configurar explícitamente a gran angular (wide)
+    res_set_wide = client.post("/api/camera/fov", json={"fov": "wide"})
+    assert res_set_wide.status_code == 200
+    assert res_set_wide.json()["fov"] == "wide"
+    assert res_set_wide.json()["label"] == "Gran Angular"
+
+    # 3. Conmutar sin cuerpo (toggle automático a lineal)
+    res_toggle = client.post("/api/camera/fov")
+    assert res_toggle.status_code == 200
+    assert res_toggle.json()["fov"] == "linear"
+    assert res_toggle.json()["label"] == "Lineal"
+
+    # 4. Configurar explícitamente a lineal
+    res_set_linear = client.post("/api/camera/fov", json={"fov": "linear"})
+    assert res_set_linear.status_code == 200
+    assert res_set_linear.json()["fov"] == "linear"
+
 
 
 

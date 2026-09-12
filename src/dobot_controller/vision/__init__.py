@@ -15,7 +15,8 @@ from dobot_controller.vision.gopro_setup import (
     find_gopro_network_interface,
     activate_gopro_webcam,
     stop_gopro_webcam,
-    check_gopro_status
+    check_gopro_status,
+    set_gopro_webcam_fov
 )
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     "find_gopro_network_interface",
     "activate_gopro_webcam",
     "stop_gopro_webcam",
-    "check_gopro_status"
+    "check_gopro_status",
+    "set_gopro_webcam_fov"
 ]

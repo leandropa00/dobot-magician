@@ -159,3 +159,61 @@ def check_gopro_status(gopro_ip: str, timeout: float = 3.0) -> Optional[Dict[str
         except Exception:
             pass
     return None
+
+
+def set_gopro_webcam_fov(gopro_ip: str, fov: str = "4", resolution: str = "1080", timeout: float = 3.0) -> bool:
+    """
+    Cambia el campo de visión (FOV) / lente digital en la GoPro activa.
+    fov: '0' = Wide (Gran Angular), '4' = Linear (Lineal).
+    
+    Args:
+        gopro_ip: Dirección IP de la GoPro.
+        fov: Código numérico o alias ('linear', 'wide', '0', '4').
+        resolution: Resolución ('1080', '720', '12').
+        timeout: Tiempo de espera para peticiones HTTP.
+    
+    Returns:
+        True si el FOV se aplicó con éxito.
+    """
+    if not gopro_ip or gopro_ip in ("Pendiente", "Sin IP (DHCP pendiente)"):
+        return False
+
+    fov_map = {
+        "wide": "0",
+        "gran_angular": "0",
+        "gran angular": "0",
+        "0": "0",
+        "linear": "4",
+        "lineal": "4",
+        "4": "4",
+        "narrow": "2",
+        "estrecho": "2",
+        "2": "2",
+        "superview": "3",
+        "3": "3",
+    }
+    fov_code = fov_map.get(str(fov).lower().strip(), "4" if str(fov).lower().strip() in ("linear", "lineal") else "0")
+
+    # 1. Intentar endpoints en caliente
+    direct_urls = [
+        f"http://{gopro_ip}:8080/gopro/webcam/start?res={resolution}&fov={fov_code}",
+        f"http://{gopro_ip}:8080/gopro/webcam/start?res=12&fov={fov_code}",
+        f"http://{gopro_ip}:8080/gopro/webcam/start?fov={fov_code}",
+        f"http://{gopro_ip}:8080/gopro/camera/setting?setting=43&option={fov_code}",
+    ]
+
+    for url in direct_urls:
+        try:
+            logger.info(f"Intentando ajustar FOV de GoPro en {url}...")
+            resp = requests.get(url, timeout=timeout)
+            if resp.status_code == 200:
+                logger.info(f"FOV de GoPro ajustado con éxito a {fov_code}.")
+                return True
+        except Exception:
+            pass
+
+    # 2. Si se requiere reinicio del stream para aplicar el cambio
+    logger.info("Reiniciando webcam de GoPro con nuevo FOV...")
+    stop_gopro_webcam(gopro_ip, timeout=timeout)
+    time.sleep(0.5)
+    return activate_gopro_webcam(gopro_ip, resolution=resolution, fov=fov_code, timeout=timeout)

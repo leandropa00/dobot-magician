@@ -30,6 +30,7 @@ class WebCameraManager:
     def __init__(self):
         self._lock = threading.Lock()
         self.active_source: str = "none"  # "gopro", "mock", "v4l2:<path>", "none"
+        self.current_fov: str = "linear"  # "linear" (Lineal) o "wide" (Gran Angular)
         self.capture: Optional[GoProCapture] = None
         self._last_jpeg: Optional[bytes] = None
         self._last_frame_b64: Optional[str] = None
@@ -95,7 +96,7 @@ class WebCameraManager:
 
             if source_id == "gopro":
                 try:
-                    self.capture = GoProCapture(source=None, mock=False, auto_activate_gopro=True)
+                    self.capture = GoProCapture(source=None, mock=False, auto_activate_gopro=True, fov=self.current_fov)
                     self.is_running = True
                 except Exception as e:
                     logger.error(f"Error activando GoPro: {e}")
@@ -103,12 +104,12 @@ class WebCameraManager:
                     raise RuntimeError(f"No se pudo conectar a la GoPro: {e}")
 
             elif source_id == "mock":
-                self.capture = GoProCapture(mock=True)
+                self.capture = GoProCapture(mock=True, fov=self.current_fov)
                 self.is_running = True
 
             elif source_id.startswith("v4l2:"):
                 dev_path = source_id.split("v4l2:", 1)[1]
-                self.capture = GoProCapture(source=dev_path, mock=False)
+                self.capture = GoProCapture(source=dev_path, mock=False, fov=self.current_fov)
                 self.is_running = True
 
             elif source_id == "none" or source_id == "browser":
@@ -165,6 +166,36 @@ class WebCameraManager:
             if jpeg:
                 yield boundary + jpeg + end
             time.sleep(0.04)  # ~25 FPS
+
+    def get_fov(self) -> str:
+        """Obtiene el campo de visión actual ('linear' o 'wide')."""
+        return self.current_fov
+
+    def set_fov(self, fov: str) -> Dict[str, Any]:
+        """
+        Cambia el campo de visión (FOV) / lente entre 'linear' y 'wide'.
+        """
+        with self._lock:
+            target_fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
+            self.current_fov = target_fov
+
+            if self.capture is not None:
+                try:
+                    self.capture.set_fov(target_fov)
+                except Exception as e:
+                    logger.warning(f"Error aplicando FOV a captura: {e}")
+
+            logger.info(f"FOV de cámara configurado en: {self.current_fov}")
+            return {
+                "status": "ok",
+                "fov": self.current_fov,
+                "label": "Lineal" if self.current_fov == "linear" else "Gran Angular"
+            }
+
+    def toggle_fov(self) -> Dict[str, Any]:
+        """Alterna entre 'linear' y 'wide'."""
+        next_fov = "wide" if self.current_fov == "linear" else "linear"
+        return self.set_fov(next_fov)
 
     def release(self):
         with self._lock:

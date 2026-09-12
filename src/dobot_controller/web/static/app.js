@@ -9,11 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
     webcamStream: null,
     cameraMode: 'browser', // 'server' o 'browser'
     activeCameraSource: null,
+    currentFov: 'linear', // 'linear' (Lineal) o 'wide' (Gran Angular)
     capturedImageBase64: null,
     isDrawing: false,
     hasActiveSketch: false,
     currentPose: { x: 0, y: 0, z: 0, r: 0 },
-    origin: { x: 235.5, y: -10.45, z_draw: -38.59, z_hover: -23.59 }
+    origin: { x: 230.0, y: 10.0, z_draw: -42.5, z_hover: -27.5 }
   };
 
   // Cargar punto de inicio persistido en el navegador si existe
@@ -21,7 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const saved = localStorage.getItem('dobot_origin');
     if (saved) {
       const parsed = JSON.parse(saved);
-      state.origin = { ...state.origin, ...parsed };
+      if (parsed && typeof parsed.z_draw === 'number') {
+        state.origin = { ...state.origin, ...parsed };
+      }
     }
   } catch (e) {
     console.warn('Error leyendo dobot_origin de localStorage:', e);
@@ -32,6 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const serverCameraStream = document.getElementById('serverCameraStream');
   const cameraSelect = document.getElementById('cameraSelect');
   const cameraStatus = document.getElementById('cameraStatus');
+  const btnToggleFov = document.getElementById('btnToggleFov');
+  const fovBtnText = document.getElementById('fovBtnText');
+  const fovIcon = document.getElementById('fovIcon');
+  const fovBadge = document.getElementById('fovBadge');
   const btnCapturePhoto = document.getElementById('btnCapturePhoto');
   const btnRetakePhoto = document.getElementById('btnRetakePhoto');
   const snapshotSection = document.getElementById('snapshotSection');
@@ -45,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sección Boceto
   const sketchSection = document.getElementById('sketchSection');
   const sketchSubjectBadge = document.getElementById('sketchSubjectBadge');
+  const sketchWarningBox = document.getElementById('sketchWarningBox');
+  const sketchWarningText = document.getElementById('sketchWarningText');
   const sketchPreviewImg = document.getElementById('sketchPreviewImg');
   const metaStrokeCount = document.getElementById('metaStrokeCount');
   const metaTotalPoints = document.getElementById('metaTotalPoints');
@@ -150,6 +159,17 @@ document.addEventListener('DOMContentLoaded', () => {
       opt.textContent = '💻 Cámara Web del Navegador';
       cameraSelect.appendChild(opt);
       if (!defaultSource) defaultSource = 'browser:default';
+    }
+
+    // Sincronizar estado inicial del campo de visión (FOV)
+    try {
+      const fovRes = await fetch('/api/camera/fov');
+      if (fovRes.ok) {
+        const fovData = await fovRes.json();
+        updateFovUI(fovData.fov);
+      }
+    } catch (e) {
+      console.warn('Error sincronizando FOV inicial:', e);
     }
 
     // Si encontramos una cámara prioritaria, seleccionarla y activarla
@@ -261,6 +281,74 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
+  // CONTROL DEL CAMPO DE VISIÓN (FOV): LINEAL vs GRAN ANGULAR
+  // =========================================================================
+
+  function updateFovUI(fov) {
+    state.currentFov = fov;
+    const isLinear = fov === 'linear';
+
+    if (fovBtnText) {
+      fovBtnText.textContent = isLinear ? 'Lente: Lineal' : 'Lente: Gran Angular';
+    }
+
+    if (btnToggleFov) {
+      btnToggleFov.title = isLinear 
+        ? 'Actualmente en Lineal. Clic para cambiar a Gran Angular' 
+        : 'Actualmente en Gran Angular. Clic para cambiar a Lineal';
+    }
+
+    if (fovBadge) {
+      fovBadge.textContent = isLinear ? '📐 Lineal' : '📐 Gran Angular';
+      fovBadge.className = isLinear ? 'fov-badge fov-badge-linear' : 'fov-badge fov-badge-wide';
+      fovBadge.title = isLinear ? 'Clic para cambiar a Gran Angular' : 'Clic para cambiar a Lineal';
+    }
+
+    if (webcamVideo) {
+      webcamVideo.style.transform = isLinear ? 'scale(1.15)' : 'scale(1)';
+      webcamVideo.style.transition = 'transform 0.3s ease';
+    }
+  }
+
+  async function toggleFov() {
+    if (!btnToggleFov) return;
+    btnToggleFov.disabled = true;
+    const targetFov = state.currentFov === 'linear' ? 'wide' : 'linear';
+
+    try {
+      const res = await fetch('/api/camera/fov', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fov: targetFov })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        updateFovUI(data.fov);
+
+        if (state.cameraMode === 'server') {
+          // Re-sincronizar el stream del servidor con timestamp anti-caché
+          setTimeout(() => {
+            serverCameraStream.src = `/api/camera/stream?t=${Date.now()}`;
+          }, 350);
+        }
+      }
+    } catch (err) {
+      console.warn('Error alternando FOV de cámara:', err);
+    } finally {
+      btnToggleFov.disabled = false;
+    }
+  }
+
+  if (btnToggleFov) {
+    btnToggleFov.addEventListener('click', toggleFov);
+  }
+
+  if (fovBadge) {
+    fovBadge.addEventListener('click', toggleFov);
+  }
+
+  // =========================================================================
   // 2. CAPTURAR FOTO CON EL BOTÓN
   // =========================================================================
 
@@ -298,7 +386,15 @@ document.addEventListener('DOMContentLoaded', () => {
       snapshotCanvas.height = vh;
 
       const ctx = snapshotCanvas.getContext('2d');
-      ctx.drawImage(webcamVideo, 0, 0, vw, vh);
+      if (state.currentFov === 'linear') {
+        const cropW = vw * 0.85;
+        const cropH = vh * 0.85;
+        const sx = (vw - cropW) / 2;
+        const sy = (vh - cropH) / 2;
+        ctx.drawImage(webcamVideo, sx, sy, cropW, cropH, 0, 0, vw, vh);
+      } else {
+        ctx.drawImage(webcamVideo, 0, 0, vw, vh);
+      }
 
       state.capturedImageBase64 = snapshotCanvas.toDataURL('image/jpeg', 0.90);
       snapshotImg.src = state.capturedImageBase64;
@@ -347,12 +443,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await response.json();
 
+      // Mostrar banner de advertencia si ocurrió un error en la IA y se recurrió al fallback
+      if (data.fallback) {
+        if (sketchWarningBox) {
+          sketchWarningBox.style.display = 'block';
+          sketchWarningText.textContent = data.error
+            ? `Se generó el boceto de respaldo sintético porque ocurrió un error al consultar el modelo de IA: ${data.error}`
+            : 'Se generó el boceto de respaldo sintético porque la IA no generó trazos para la imagen.';
+        }
+        if (sketchSubjectBadge) {
+          sketchSubjectBadge.className = 'badge badge-warning';
+          sketchSubjectBadge.textContent = '⚠️ ' + (data.subject || 'Fallback');
+        }
+      } else {
+        if (sketchWarningBox) {
+          sketchWarningBox.style.display = 'none';
+        }
+        if (sketchSubjectBadge) {
+          sketchSubjectBadge.className = 'badge badge-success';
+          sketchSubjectBadge.textContent = '🎨 ' + (data.subject || 'Objeto Detectado');
+        }
+      }
+
       // Mostrar sección del boceto abajo
-      sketchSubjectBadge.textContent = data.subject || 'Objeto detectado';
       sketchPreviewImg.src = data.preview_image;
       metaStrokeCount.textContent = `${data.stroke_count} trazos`;
       metaTotalPoints.textContent = `${data.total_points} puntos`;
       metaOriginPos.textContent = `X=${state.origin.x.toFixed(1)}, Y=${state.origin.y.toFixed(1)}, Z=${state.origin.z_draw.toFixed(1)} mm`;
+
+      if (data.model_used && metaModelName) {
+        metaModelName.textContent = data.model_used;
+      }
 
       state.hasActiveSketch = true;
       sketchSection.style.display = 'flex';

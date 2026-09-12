@@ -20,6 +20,7 @@ from dobot_controller.vision.gopro_setup import (
     find_gopro_network_interface,
     activate_gopro_webcam,
     stop_gopro_webcam,
+    set_gopro_webcam_fov,
     list_v4l2_devices
 )
 
@@ -32,14 +33,21 @@ class MockCamera:
     Genera una vista cenital del área de trabajo del Dobot con el efector y un objetivo.
     """
 
-    def __init__(self, width: int = 640, height: int = 480):
+    def __init__(self, width: int = 640, height: int = 480, fov: str = "linear"):
         self.width = width
         self.height = height
+        self.fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
         self.target_pos = (width // 2 + 80, height // 2 - 50)  # Pixel pos del objetivo
         self.effector_pos = [width // 2, height // 2]        # Pixel pos del efector
         self.suction_active = False
         self._lock = threading.Lock()
-        logger.info(f"MockCamera inicializada ({width}x{height})")
+        logger.info(f"MockCamera inicializada ({width}x{height}, FOV: {self.fov})")
+
+    def set_fov(self, fov: str):
+        """Cambia el campo de visión del simulador ('linear' o 'wide')."""
+        with self._lock:
+            self.fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
+            logger.info(f"MockCamera FOV configurado en: {self.fov}")
 
     def update_effector_from_robot(self, x: float, y: float, z: float, suction: bool = False):
         """
@@ -128,6 +136,23 @@ class MockCamera:
             cv2.line(frame, (ex, ey - 8), (ex, ey + 8), (0, 0, 0), 1)
             cv2.putText(frame, "DOBOT END EFFECTOR", (ex - 50, ey + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (50, 50, 50), 1)
 
+            # Letrero de lente actual
+            lens_text = "[LENTE: LINEAL]" if self.fov == "linear" else "[LENTE: GRAN ANGULAR]"
+            lens_color = (255, 160, 0) if self.fov == "linear" else (0, 200, 100)
+            cv2.putText(frame, lens_text, (self.width - 200, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, lens_color, 1)
+
+            # En modo lineal, simular encuadre lineal (zoom óptico sin distorsión ojo de pez)
+            if self.fov == "linear":
+                crop_h = int(self.height * 0.85)
+                crop_w = int(self.width * 0.85)
+                sy = (self.height - crop_h) // 2
+                sx = (self.width - crop_w) // 2
+                cropped = frame[sy:sy + crop_h, sx:sx + crop_w]
+                frame = cv2.resize(cropped, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+                cv2.putText(frame, lens_text, (self.width - 200, 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, lens_color, 1)
+
             # Letrero de modo simulación
             cv2.putText(frame, "[MODO SIMULACION - MOCK CAMERA]", (10, self.height - 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
@@ -152,13 +177,15 @@ class GoProCapture:
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
-        auto_activate_gopro: bool = True
+        auto_activate_gopro: bool = True,
+        fov: str = "linear"
     ):
         self.mock = mock
         self.width = width
         self.height = height
         self.fps = fps
         self.auto_activate_gopro = auto_activate_gopro
+        self.fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
         self.source = source
         self.gopro_ip: Optional[str] = None
         self._mock_cam: Optional[MockCamera] = None
@@ -177,12 +204,31 @@ class GoProCapture:
         else:
             self._init_capture()
 
+    def set_fov(self, fov: str) -> bool:
+        """
+        Cambia el campo de visión (FOV) / lente entre 'linear' y 'wide'.
+        """
+        new_fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
+        self.fov = new_fov
+
+        if self.mock or self._mock_cam:
+            if self._mock_cam:
+                self._mock_cam.set_fov(new_fov)
+            return True
+
+        if self.gopro_ip:
+            fov_code = "4" if new_fov == "linear" else "0"
+            res = "1080" if self.height >= 1080 else "720"
+            return set_gopro_webcam_fov(self.gopro_ip, fov=fov_code, resolution=res)
+
+        return True
+
     def _init_mock(self):
         """Inicia cámara simulada."""
-        self._mock_cam = MockCamera(width=self.width, height=self.height)
+        self._mock_cam = MockCamera(width=self.width, height=self.height, fov=self.fov)
         ret, frame = self._mock_cam.read()
         self._latest_frame = frame
-        logger.info("GoProCapture configurado en modo MOCK.")
+        logger.info(f"GoProCapture configurado en modo MOCK (FOV: {self.fov}).")
 
     def _init_capture(self):
         """Detecta e inicializa la fuente de video real."""
@@ -192,7 +238,8 @@ class GoProCapture:
             if gopro_net and self.auto_activate_gopro:
                 self.gopro_ip = gopro_net["gopro_ip"]
                 logger.info(f"GoPro detectada en red USB ({gopro_net['interface']}) con IP {self.gopro_ip}")
-                if activate_gopro_webcam(self.gopro_ip, resolution="1080" if self.height >= 1080 else "720"):
+                fov_code = "4" if self.fov == "linear" else "0"
+                if activate_gopro_webcam(self.gopro_ip, resolution="1080" if self.height >= 1080 else "720", fov=fov_code):
                     time.sleep(1.5)  # Esperar a que el stream UDP empiece
                     self.source = "udp://@0.0.0.0:8554?overrun_nonfatal=1&fifo_size=50000000"
 

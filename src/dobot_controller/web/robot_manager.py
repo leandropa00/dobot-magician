@@ -50,11 +50,11 @@ class RobotManager:
         self.canvas_height: float = 140.0    # mm
 
         # Punto de inicio / referencia indicado para dibujar
-        self.origin_x: float = 235.50
-        self.origin_y: float = -10.45
-        self.origin_z_draw: float = -38.59
-        self.origin_z_hover: float = -23.59
-        self.origin_r: float = 5.67
+        self.origin_x: float = 230.00
+        self.origin_y: float = 10.00
+        self.origin_z_draw: float = -42.50
+        self.origin_z_hover: float = -27.50
+        self.origin_r: float = 0.00
 
         # Cargar configuración persistente de punto de inicio si existe
         self._load_saved_origin()
@@ -92,7 +92,8 @@ class RobotManager:
 
     @property
     def model(self) -> str:
-        return resolve_claude_model(self._model)
+        load_dotenv(override=False)
+        return resolve_claude_model(self._model or os.environ.get("ANTHROPIC_MODEL"))
 
     @model.setter
     def model(self, value: Optional[str]):
@@ -374,8 +375,8 @@ class RobotManager:
         raw_strokes: List[Dict[str, Any]] = []
 
         load_dotenv(override=True)
-        api_key = self.anthropic_key or os.environ.get("ANTHROPIC_API_KEY")
-        self.model = resolve_claude_model(self.model)
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or self.anthropic_key
+        current_model = resolve_claude_model(self._model or os.environ.get("ANTHROPIC_MODEL"))
 
         if api_key:
             try:
@@ -404,9 +405,9 @@ class RobotManager:
                     }
                 ]
 
-                logger.info(f"Enviando imagen al modelo {self.model}...")
+                logger.info(f"Enviando imagen al modelo {current_model}...")
                 response = client.messages.create(
-                    model=self.model,
+                    model=current_model,
                     max_tokens=4096,
                     system=DRAWING_PROMPT,
                     messages=messages,
@@ -421,11 +422,16 @@ class RobotManager:
                         break
 
             except Exception as e:
-                logger.error(f"Error consultando modelo Claude: {e}")
-                self.last_error = f"Error en Claude API: {e}. Usando boceto alternativo."
+                logger.error(f"Error consultando modelo Claude ({current_model}): {e}")
+                self.last_error = f"Error en Claude API ({current_model}): {e}"
+        else:
+            self.last_error = "No se detectó ANTHROPIC_API_KEY en las variables de entorno o archivo .env"
+            logger.warning(self.last_error)
 
+        is_fallback = False
         if not raw_strokes:
-            logger.warning("Generando boceto estilizado sintético (fallback)...")
+            is_fallback = True
+            logger.warning(f"Generando boceto estilizado sintético (fallback)... Causa: {self.last_error or 'Sin trazos generados'}")
             subject = "Taza de café estilizada (Simulación/Fallback)"
             raw_strokes = self._generate_fallback_strokes()
 
@@ -438,11 +444,17 @@ class RobotManager:
             "raw_strokes": raw_strokes,
             "robot_strokes": robot_strokes,
             "total_points": total_points,
-            "preview_base64": preview_base64
+            "preview_base64": preview_base64,
+            "fallback": is_fallback,
+            "error": self.last_error if is_fallback else None,
+            "model_used": current_model
         }
 
         return {
             "success": True,
+            "fallback": is_fallback,
+            "error": self.last_error if is_fallback else None,
+            "model_used": current_model,
             "subject": subject,
             "stroke_count": len(robot_strokes),
             "total_points": total_points,
@@ -627,9 +639,12 @@ class RobotManager:
         origin_z_draw: Optional[float] = None,
         origin_z_hover: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Inicia el dibujo de forma asíncrona a partir del punto indicado, conservando la altura Z."""
+        """Inicia el dibujo de forma asíncrona a partir del punto indicado, conservando estrictamente la altura Z."""
         if not self.bot or not self.is_connected:
             raise RuntimeError("Robot no conectado.")
+
+        # Recargar siempre el origen persistido en disco para garantizar la calibración guardada
+        self._load_saved_origin()
 
         with self._lock:
             # Si se proporcionan coordenadas explícitas, actualizarlas y persistirlas inmediatamente
@@ -660,7 +675,7 @@ class RobotManager:
                 "total_strokes": len(self.current_sketch["robot_strokes"]),
                 "stroke_name": "Iniciando",
                 "percent": 0.0,
-                "message": f"Elevando a altura de tránsito (Z_hover={self.origin_z_hover} mm) y preparando lápiz (Z_draw={self.origin_z_draw} mm)...",
+                "message": f"Iniciando dibujo conservando altura configurada (Z={self.origin_z_draw} mm)...",
                 "error": None
             }
 
@@ -699,6 +714,7 @@ class RobotManager:
                 self.bot.set_speed(velocity=self.velocity, acceleration=self.acceleration)
 
                 # 2. Conservar estrictamente las alturas Z del Punto de Inicio Indicado
+                self._load_saved_origin()
                 z_draw = float(self.origin_z_draw)
                 z_hover = float(self.origin_z_hover)
                 logger.info(
@@ -706,12 +722,10 @@ class RobotManager:
                     f"Z_draw={z_draw} mm, Z_hover={z_hover} mm"
                 )
 
-                # 3. Elevar verticalmente a altura de tránsito sobre la posición actual
-                self.drawing_progress["message"] = f"Subiendo brazo verticalmente a Z_hover={z_hover} mm..."
-                cur = self.bot.get_pose()
-                self.bot.move_to(x=cur["x"], y=cur["y"], z=z_hover, r=self.origin_r, wait=True, mode=MODE_PTP.MOVL_XYZ)
+                # NO elevar verticalmente sobre la posición actual al inicio.
+                # Se conserva la Z configurada y persistida, evitando que el brazo suba en Z.
 
-                # 4. Ejecutar trazos continuos
+                # 3. Ejecutar trazos continuos conservando estrictamente z_draw
                 for idx, stroke in enumerate(strokes, start=1):
                     if self._cancel_drawing.is_set():
                         logger.warning("Dibujo cancelado por el usuario.")

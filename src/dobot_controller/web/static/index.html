@@ -47,6 +47,7 @@
         <div class="camera-overlay">
           <div class="focus-reticle"></div>
           <span class="overlay-hint">Apunta el objeto frente a la cámara</span>
+          <span class="fov-badge fov-badge-linear" id="fovBadge" title="Lente digital activa. Haz clic para cambiar">📐 Lineal</span>
         </div>
       </div>
 
@@ -55,6 +56,9 @@
         <select id="cameraSelect" class="form-select" title="Seleccionar cámara">
           <option value="">Cámara Predeterminada</option>
         </select>
+        <button class="btn btn-secondary" id="btnToggleFov" title="Alternar entre lente Lineal y Gran Angular">
+          <span id="fovIcon">📐</span> <span id="fovBtnText">Lente: Lineal</span>
+        </button>
         <button class="btn btn-primary" id="btnCapturePhoto">
           📸 Capturar Foto
         </button>
@@ -74,7 +78,7 @@
         <div class="prompt-input-group">
           <label for="promptInput">
             Instrucción para el Modelo de Visión
-            <span class="badge badge-accent" id="modelNameBadge">Claude 3.5 Sonnet (Sonnet 4.5)</span>:
+            <span class="badge badge-accent" id="modelNameBadge">Claude Sonnet 5</span>:
           </label>
           <input type="text" id="promptInput" class="form-input" 
                  value="Identifica el objeto en la imagen y sintetiza un boceto de líneas limpias para dibujarlo">
@@ -88,7 +92,7 @@
       <!-- Spinner de carga del modelo -->
       <div class="loading-box" id="modelLoadingBox" style="display: none;">
         <div class="spinner"></div>
-        <p id="loadingMessage">Claude (Sonnet 4.5) está analizando la imagen y sintetizando la trayectoria de dibujo...</p>
+        <p id="loadingMessage">Claude Sonnet 5 está analizando la imagen y sintetizando la trayectoria de dibujo...</p>
       </div>
 
       <!-- SECCIÓN DEL BOCETO GENERADO (Aparece abajo para confirmar) -->
@@ -101,6 +105,11 @@
         <p class="sketch-desc">
           Revisa el boceto y la posición inicial antes de enviar al robot.
         </p>
+
+        <!-- Banner de advertencia si se recurre al boceto de fallback por error -->
+        <div id="sketchWarningBox" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.88rem; margin-bottom: 1rem;">
+          ⚠️ <span id="sketchWarningText"></span>
+        </div>
 
         <!-- Previsualización gráfica del boceto sobre el cuaderno -->
         <div class="sketch-preview-container">
@@ -122,7 +131,7 @@
           </div>
           <div class="meta-item">
             <span class="meta-label">Modelo de Visión:</span>
-            <span class="meta-value" id="metaModelName">claude-sonnet-4-5-20250929</span>
+            <span class="meta-value" id="metaModelName">claude-sonnet-5</span>
           </div>
         </div>
 
@@ -191,7 +200,7 @@
           </button>
           <div class="origin-saved-hint" id="savedOriginContainer">
             <span class="hint-label">Posición inicial:</span>
-            <span class="hint-val" id="savedOriginDisplay">X=235.50, Y=-10.45, Z=-38.59 mm</span>
+            <span class="hint-val" id="savedOriginDisplay">X=230.00, Y=10.00, Z=-42.50 mm</span>
           </div>
         </div>
       </div>

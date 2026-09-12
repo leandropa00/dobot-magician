@@ -457,19 +457,79 @@ def test_resolve_claude_model_and_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219")
     assert resolve_claude_model() == "claude-3-7-sonnet-20250219"
 
-    # 3. Argumento explícito tiene prioridad sobre variable de entorno
+    # 3. Argumento explícito tiene prioridad sobre variable de entorno y normaliza alias
     assert resolve_claude_model("claude-3-5-haiku-20241022") == "claude-3-5-haiku-20241022"
+    assert resolve_claude_model("claude-sonnet-5-20260630") == "claude-sonnet-5"
+    assert resolve_claude_model("sonnet-5") == "claude-sonnet-5"
 
     # 4. VisionAgent inicializado sin argumento usa el modelo configurado
     agent = VisionAgent(api_key="test-dummy-key")
     assert agent.model == "claude-3-7-sonnet-20250219"
 
     # 5. Lista de permitidos contiene los modelos estándar
-    assert "claude-sonnet-5-20260630" in ALLOWED_CLAUDE_MODELS
     assert "claude-sonnet-5" in ALLOWED_CLAUDE_MODELS
+    assert "claude-sonnet-5-20260630" in ALLOWED_CLAUDE_MODELS
+    assert "claude-sonnet-4-6" in ALLOWED_CLAUDE_MODELS
     assert "claude-sonnet-4-5-20250929" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-7-sonnet-20250219" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-5-sonnet-20241022" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-5-haiku-20241022" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-opus-20240229" in ALLOWED_CLAUDE_MODELS
+
+
+def test_mock_camera_fov():
+    """Verifica alternancia de FOV en la cámara simulada (MockCamera)."""
+    from dobot_controller.vision.camera import MockCamera
+
+    cam = MockCamera(width=320, height=240, fov="linear")
+    assert cam.fov == "linear"
+    ret, frame = cam.read()
+    assert ret is True
+    assert frame.shape == (240, 320, 3)
+
+    cam.set_fov("wide")
+    assert cam.fov == "wide"
+    ret, frame_wide = cam.read()
+    assert ret is True
+    assert frame_wide.shape == (240, 320, 3)
+
+
+def test_gopro_capture_fov_and_api(monkeypatch):
+    """Verifica configuración de FOV en GoProCapture y la función set_gopro_webcam_fov."""
+    from dobot_controller.vision.camera import GoProCapture
+    from dobot_controller.vision.gopro_setup import set_gopro_webcam_fov
+    from unittest.mock import MagicMock
+
+    # 1. GoProCapture en modo mock
+    cap = GoProCapture(mock=True, fov="linear")
+    assert cap.fov == "linear"
+    assert cap.set_fov("wide") is True
+    assert cap.fov == "wide"
+    assert cap.set_fov("linear") is True
+    assert cap.fov == "linear"
+    cap.release()
+
+    # 2. set_gopro_webcam_fov con llamadas HTTP simuladas
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+
+    called_urls = []
+    def fake_get(url, *args, **kwargs):
+        called_urls.append(url)
+        return mock_resp
+
+    monkeypatch.setattr("dobot_controller.vision.gopro_setup.requests.get", fake_get)
+
+    # Conmutar a Gran Angular (0)
+    ok_wide = set_gopro_webcam_fov("172.24.156.51", fov="0")
+    assert ok_wide is True
+    assert any("fov=0" in u for u in called_urls)
+
+    # Conmutar a Lineal (4)
+    called_urls.clear()
+    ok_linear = set_gopro_webcam_fov("172.24.156.51", fov="4")
+    assert ok_linear is True
+    assert any("fov=4" in u for u in called_urls)
+
 

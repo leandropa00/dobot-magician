@@ -95,6 +95,10 @@ class SelectCameraRequest(BaseModel):
     source: str = Field(..., description="Identificador de la fuente de video (ej. 'gopro', 'mock', 'v4l2:/dev/video0', 'browser')")
 
 
+class SetFovRequest(BaseModel):
+    fov: Optional[str] = Field(None, description="Modo de lente: 'linear', 'wide', '0' o '4'. Si no se envía, conmuta entre ambos.")
+
+
 # ==========================================
 # RUTAS DE LA API
 # ==========================================
@@ -113,6 +117,29 @@ def select_camera(req: SelectCameraRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/camera/fov")
+def get_camera_fov():
+    """Obtiene el campo de visión actual de la cámara ('linear' o 'wide')."""
+    fov = camera_manager.get_fov()
+    return {
+        "status": "ok",
+        "fov": fov,
+        "label": "Lineal" if fov == "linear" else "Gran Angular"
+    }
+
+
+@app.post("/api/camera/fov")
+def set_camera_fov(req: Optional[SetFovRequest] = Body(None)):
+    """
+    Configura o conmuta el campo de visión (FOV) de la cámara entre Lineal y Gran Angular.
+    """
+    if req and req.fov:
+        result = camera_manager.set_fov(req.fov)
+    else:
+        result = camera_manager.toggle_fov()
+    return result
 
 
 @app.get("/api/camera/stream")
