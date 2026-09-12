@@ -254,29 +254,32 @@
       <!-- SECCIÓN PUNTO DE INICIO INDICADO ("Que comience a dibujar desde ese punto que se indique") -->
       <div class="section-card origin-card">
         <div class="card-title">
-          <span>🎯 Punto de Inicio Indicado</span>
+          <div>
+            <span>🎯 Punto de Inicio Indicado</span>
+            <span id="originSaveStatus" class="badge badge-success" style="display: none; margin-left: 0.5rem;">Guardado ✔</span>
+          </div>
           <span class="badge badge-accent">Referencia de Dibujo</span>
         </div>
         <p class="origin-tip">
-          Mueve el brazo con las flechas hasta donde desees iniciar el dibujo y presiona el botón para fijarlo.
+          Puedes editar los valores directamente con el teclado o mover el brazo con las flechas y fijar su posición.
         </p>
 
         <div class="origin-display-grid">
           <div class="origin-input-group">
-            <label>Inicio X (mm):</label>
-            <input type="number" id="originX" class="form-input" step="0.5" value="235.50">
+            <label for="originX">Inicio X (mm):</label>
+            <input type="number" id="originX" class="form-input" step="any" value="235.50">
           </div>
           <div class="origin-input-group">
-            <label>Inicio Y (mm):</label>
-            <input type="number" id="originY" class="form-input" step="0.5" value="-10.45">
+            <label for="originY">Inicio Y (mm):</label>
+            <input type="number" id="originY" class="form-input" step="any" value="-10.45">
           </div>
           <div class="origin-input-group">
-            <label>Z Dibujo (mm):</label>
-            <input type="number" id="originZDraw" class="form-input" step="0.5" value="-38.59" title="Contacto con el papel">
+            <label for="originZDraw">Z Dibujo (mm):</label>
+            <input type="number" id="originZDraw" class="form-input" step="any" value="-38.59" title="Contacto con el papel">
           </div>
           <div class="origin-input-group">
-            <label>Z Tránsito (mm):</label>
-            <input type="number" id="originZHover" class="form-input" step="0.5" value="-23.59" title="Altura segura en el aire">
+            <label for="originZHover">Z Tránsito (mm):</label>
+            <input type="number" id="originZHover" class="form-input" step="any" value="-23.59" title="Altura segura en el aire">
           </div>
         </div>
 
