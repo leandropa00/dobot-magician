@@ -7,12 +7,16 @@ y provee un stream MJPEG de baja latencia para el navegador.
 
 import os
 import time
-import cv2
 import base64
 import logging
 import threading
 from typing import Optional, List, Dict, Any, Generator
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 from dobot_controller.vision.camera import GoProCapture
 from dobot_controller.vision.gopro_setup import (
@@ -39,6 +43,8 @@ class WebCameraManager:
     def list_server_cameras(self) -> List[Dict[str, Any]]:
         """Devuelve las fuentes de cámara disponibles en el sistema operativo."""
         devices = []
+        if cv2 is None:
+            return devices
 
         # 1. Comprobar GoPro vía USB / Red
         gopro_usb = find_gopro_usb_device()
@@ -74,7 +80,7 @@ class WebCameraManager:
                     "path": d["path"]
                 })
 
-        # 3. Cámara simulada (siempre disponible para testing)
+        # 3. Cámara simulada (siempre disponible para testing con opencv)
         devices.append({
             "id": "mock",
             "name": "🧪 Cámara Simulada (Mock Dobot)",
@@ -94,6 +100,17 @@ class WebCameraManager:
 
             self.active_source = source_id
 
+            if source_id == "none" or source_id == "browser":
+                self.active_source = "browser"
+                self.is_running = False
+                return {"status": "ok", "source": self.active_source}
+
+            if cv2 is None:
+                raise RuntimeError(
+                    "Para usar fuentes de cámara en el servidor (GoPro, V4L2 o simulada) "
+                    "se requiere instalar 'opencv-python'. Para la cámara del cliente/navegador no es necesario."
+                )
+
             if source_id == "gopro":
                 try:
                     self.capture = GoProCapture(source=None, mock=False, auto_activate_gopro=True, fov=self.current_fov)
@@ -111,10 +128,6 @@ class WebCameraManager:
                 dev_path = source_id.split("v4l2:", 1)[1]
                 self.capture = GoProCapture(source=dev_path, mock=False, fov=self.current_fov)
                 self.is_running = True
-
-            elif source_id == "none" or source_id == "browser":
-                self.active_source = "browser"
-                self.is_running = False
 
             return {"status": "ok", "source": self.active_source}
 
@@ -139,6 +152,8 @@ class WebCameraManager:
 
     def get_latest_jpeg(self) -> Optional[bytes]:
         """Obtiene el último fotograma comprimido en JPEG."""
+        if cv2 is None:
+            return None
         frame = self.get_latest_frame()
         if frame is None:
             return self._last_jpeg

@@ -384,6 +384,7 @@ def test_visual_trajectory_drawer_notebook_centering_and_approval():
 
 def test_visual_trajectory_drawer_arbitrary_object_and_image_file():
     from unittest.mock import patch
+    pytest.importorskip("cv2")
     import cv2
     import numpy as np
     from dobot_controller.controller import DobotController

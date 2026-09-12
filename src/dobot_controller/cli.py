@@ -538,6 +538,17 @@ def web_cmd(
     # Inicializar manager con las opciones dadas
     web_module.robot_manager = RobotManager(mock=mock, port=serial_port)
 
+    # Configurar archivo de log persistente
+    import logging
+    try:
+        fh = logging.FileHandler("dobot_web.log", encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger().addHandler(fh)
+        logging.getLogger("dobot_controller").addHandler(fh)
+        logging.getLogger("uvicorn").addHandler(fh)
+    except Exception:
+        pass
+
     url = f"http://{host}:{port}"
     console.print(Panel(
         f"[bold green]🌐 Servidor Web de Dobot Magician Activo[/bold green]\n\n"

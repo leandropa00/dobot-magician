@@ -5,7 +5,6 @@ y generador de fotogramas simulados (MockCamera).
 """
 
 import os
-import io
 import time
 import base64
 import math
@@ -13,8 +12,11 @@ import logging
 import threading
 from typing import Optional, Tuple, Union, Dict, Any
 import numpy as np
-import cv2
-from PIL import Image
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 from dobot_controller.vision.gopro_setup import (
     find_gopro_network_interface,
@@ -34,6 +36,12 @@ class MockCamera:
     """
 
     def __init__(self, width: int = 640, height: int = 480, fov: str = "linear"):
+        if cv2 is None:
+            raise ImportError(
+                "OpenCV no está instalado ('opencv-python'). "
+                "La simulación de cámara local del servidor requiere opencv-python. "
+                "Para la cámara del cliente/navegador no es necesario."
+            )
         self.width = width
         self.height = height
         self.fov = "linear" if str(fov).lower() in ("linear", "lineal", "4") else "wide"
@@ -189,7 +197,14 @@ class GoProCapture:
         self.source = source
         self.gopro_ip: Optional[str] = None
         self._mock_cam: Optional[MockCamera] = None
-        self.cap: Optional[cv2.VideoCapture] = None
+        self.cap: Optional[Any] = None
+
+        if cv2 is None:
+            raise ImportError(
+                "OpenCV no está instalado ('opencv-python'). "
+                "La captura de cámara desde el servidor requiere opencv-python. "
+                "Para la cámara del cliente/navegador no se requiere."
+            )
 
         # Variables de hilo
         self._running = False
@@ -331,6 +346,9 @@ class GoProCapture:
         if not ret or frame is None:
             return None
 
+        if cv2 is None:
+            return None
+
         # Redimensionar si excede max_dimension manteniendo aspecto
         h, w = frame.shape[:2]
         if max(h, w) > max_dimension:
@@ -338,12 +356,11 @@ class GoProCapture:
             new_w, new_h = int(w * scale), int(h * scale)
             frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # Convertir BGR a RGB y codificar a JPEG
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb_frame)
-        buffer = io.BytesIO()
-        pil_img.save(buffer, format="JPEG", quality=quality)
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        # Codificar a JPEG usando OpenCV directamente
+        ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ret:
+            return None
+        return base64.b64encode(buffer.tobytes()).decode("utf-8")
 
     def sync_mock_with_dobot(self, x: float, y: float, z: float, suction: bool = False):
         """Sincroniza el efector simulado con la posición real/mock del Dobot."""

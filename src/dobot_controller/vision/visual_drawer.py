@@ -7,7 +7,6 @@ para ejecutar el dibujo de forma continua y fluida sin pausas intermedias.
 """
 
 import os
-import cv2
 import json
 import math
 import time
@@ -15,6 +14,11 @@ import base64
 import logging
 from typing import List, Dict, Any, Optional, Tuple, Callable
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import anthropic
 from rich.console import Console
 from rich.panel import Panel
@@ -191,6 +195,8 @@ class VisualTrajectoryDrawer:
         - Si image_path existe en disco, carga directamente esa foto del objeto.
         - Si no, captura un fotograma con la cámara (GoPro o webcam USB).
         """
+        if cv2 is None:
+            raise ImportError("La función de captura/lectura local de imágenes requiere 'opencv-python'.")
         if image_path and os.path.exists(image_path):
             frame = cv2.imread(image_path)
             if frame is None:
@@ -347,6 +353,8 @@ class VisualTrajectoryDrawer:
         img_w = notebook_w_px + (margin_px * 2)
         img_h = notebook_h_px + (margin_px * 2) + 40  # Espacio superior para cabecera
 
+        if cv2 is None:
+            raise ImportError("La generación de previsualización en imagen local requiere 'opencv-python'.")
         preview = np.full((img_h, img_w, 3), 248, dtype=np.uint8)
 
         # 1. Borde y fondo del cuaderno (25x17 cm)

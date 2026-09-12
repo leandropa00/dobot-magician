@@ -21,6 +21,17 @@ from dobot_controller.safety import SafetyBoundaryError
 
 logger = logging.getLogger(__name__)
 
+# Configurar volcado de registros en archivo para inspección persistente
+LOG_FILE = Path("dobot_web.log")
+try:
+    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logging.getLogger().addHandler(file_handler)
+    logging.getLogger("dobot_controller").addHandler(file_handler)
+    logging.getLogger("dobot_controller").setLevel(logging.INFO)
+except Exception:
+    pass
+
 # Directorio estático
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -307,6 +318,19 @@ def stop_drawing():
 def drawing_progress():
     mgr = get_manager()
     return mgr.drawing_progress
+
+
+@app.get("/api/logs")
+def get_logs(lines: int = 100):
+    """Devuelve las últimas líneas del archivo de registro de actividad del servidor."""
+    if not LOG_FILE.exists():
+        return {"logs": [], "message": "No hay archivo de registro disponible aún."}
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        return {"logs": all_lines[-lines:], "total_lines": len(all_lines)}
+    except Exception as e:
+        return {"logs": [], "error": str(e)}
 
 
 # ==========================================

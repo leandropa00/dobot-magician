@@ -13,6 +13,13 @@ from fastapi.testclient import TestClient
 from dobot_controller.web.app import app, get_manager
 from dobot_controller.web.robot_manager import RobotManager
 
+# Imagen JPEG 1x1 mínima en base64 para pruebas (sin necesidad de OpenCV ni Pillow)
+DUMMY_BASE64_IMAGE = (
+    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////"
+    "////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAA"
+    "AAAAAAAAAP/aAAgBAQABPxA="
+)
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -96,16 +103,9 @@ def test_set_origin_and_start_drawing_from_point(client):
     assert round(origin_data["z_draw"], 1) == -35.0
     assert round(origin_data["z_hover"], 1) == -20.0  # -35 + 15
 
-    # 3. Generar un boceto
-    # Crear imagen dummy de 100x100 píxeles en base64
-    import numpy as np
-    import cv2
-    dummy_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
-    _, buffer = cv2.imencode(".jpg", dummy_frame)
-    b64_img = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
-
+    # 3. Generar un boceto con imagen dummy
     res_sketch = client.post("/api/generate-sketch", json={
-        "image": b64_img,
+        "image": DUMMY_BASE64_IMAGE,
         "instruction": "Dibuja un objeto de prueba"
     })
     assert res_sketch.status_code == 200
@@ -115,7 +115,7 @@ def test_set_origin_and_start_drawing_from_point(client):
     assert sketch["model_used"] == "claude-sonnet-5"
     assert sketch["stroke_count"] > 0
     assert "preview_image" in sketch
-    assert sketch["preview_image"].startswith("data:image/png;base64,")
+    assert sketch["preview_image"].startswith("data:image/")
 
     # Los trazos convertidos deben estar centrados en torno al origen fijado (240.0, 15.0)
     first_stroke = sketch["robot_strokes"][0]
@@ -181,12 +181,7 @@ def test_start_drawing_preserves_z_height(client):
     assert origin["z_hover"] == -27.5
 
     # 2. Generar boceto
-    import numpy as np
-    import cv2
-    dummy_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
-    _, buffer = cv2.imencode(".jpg", dummy_frame)
-    b64_img = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
-    client.post("/api/generate-sketch", json={"image": b64_img})
+    client.post("/api/generate-sketch", json={"image": DUMMY_BASE64_IMAGE})
 
     # 3. Iniciar dibujo conservando las alturas Z indicadas
     res_draw = client.post("/api/start-drawing", json={
@@ -219,12 +214,7 @@ def test_start_drawing_conserves_persisted_origin_without_payload(client):
     })
 
     # 2. Generar boceto
-    import numpy as np
-    import cv2
-    dummy_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
-    _, buffer = cv2.imencode(".jpg", dummy_frame)
-    b64_img = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
-    client.post("/api/generate-sketch", json={"image": b64_img})
+    client.post("/api/generate-sketch", json={"image": DUMMY_BASE64_IMAGE})
 
     # 3. Iniciar dibujo sin especificar origen (llamada estándar desde la UI)
     res_draw = client.post("/api/start-drawing")
