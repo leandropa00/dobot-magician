@@ -40,3 +40,15 @@ htmlcov/
 
 # Logs
 *.log
+
+# Environment variables
+.env
+*.env
+
+# AI Agent sessions
+.dobot_ai_session.json
+*.ai_session.json
+
+# Visual Drawing temp files
+captured_subject.jpg
+drawing_preview.png

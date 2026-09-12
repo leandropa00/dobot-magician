@@ -3,7 +3,7 @@
 import math
 import time
 import logging
-from typing import List, Tuple, Dict, Callable, Optional
+from typing import List, Tuple, Dict, Callable, Optional, Any
 from pydobotplus.dobotplus import MODE_PTP
 
 from dobot_controller.controller import DobotController
@@ -151,3 +151,45 @@ def draw_smiley_face(
     bot.move_to(x=center_x, y=center_y, z=z_hover + 10.0, wait=True, mode=MODE_PTP.MOVJ_XYZ)
     if status_callback:
         status_callback("¡Carita feliz completada con éxito!")
+
+
+def draw_trajectory_sequence(
+    bot: DobotController,
+    strokes: List[Dict[str, Any]],
+    z_draw: float = 0.0,
+    z_hover: float = 15.0,
+    velocity: float = 40.0,
+    acceleration: float = 40.0,
+    status_callback: Optional[Callable[[str], None]] = None
+):
+    """
+    Ejecuta una secuencia continua de trazos en el Dobot Magician sin interrupción:
+    1. Configura velocidad y aceleración de dibujo.
+    2. Para cada trazo en strokes, levanta el marcador, se posiciona, desciende a z_draw,
+       dibuja todos los puntos de forma lineal continua y vuelve a levantarse.
+    3. Al finalizar, regresa a posición de reposo en el aire.
+    """
+    if not strokes:
+        return
+
+    bot.set_speed(velocity=velocity, acceleration=acceleration)
+    total_strokes = len(strokes)
+
+    for i, stroke in enumerate(strokes, start=1):
+        name = stroke.get("name", f"Trazo_{i}")
+        points = stroke.get("points", [])
+        if not points:
+            continue
+        pt_list = [(float(p[0]), float(p[1])) for p in points]
+        if status_callback:
+            status_callback(f"Dibujando trazo {i}/{total_strokes}: {name} ({len(pt_list)} puntos)...")
+        logger.info(f"Dibujando {name} ({len(pt_list)} puntos)")
+        draw_stroke(bot, pt_list, z_draw=z_draw, z_hover=z_hover)
+
+    # Posición de reposo al aire sobre el centro o último trazo
+    if strokes and strokes[-1].get("points"):
+        last_pt = strokes[-1]["points"][-1]
+        bot.move_to(x=float(last_pt[0]), y=float(last_pt[1]), z=z_hover + 10.0, wait=True, mode=MODE_PTP.MOVJ_XYZ)
+
+    if status_callback:
+        status_callback("Secuencia continua de dibujo completada con éxito.")
