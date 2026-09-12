@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--preview", default="drawing_preview.png", help="Archivo de imagen para la previsualización")
     parser.add_argument(
         "--model",
-        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-20260630"),
         help="Modelo de Claude a utilizar (configurable vía ANTHROPIC_MODEL en .env)"
     )
 

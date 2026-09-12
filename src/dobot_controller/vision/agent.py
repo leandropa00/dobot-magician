@@ -16,11 +16,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Modelo por defecto
-DEFAULT_CLAUDE_MODEL: str = "claude-sonnet-4-5-20250929"
+DEFAULT_CLAUDE_MODEL: str = "claude-sonnet-5-20260630"
 
 # Modelos oficiales de Anthropic con capacidades multimodales (Visión + Tool Use) permitidos
 ALLOWED_CLAUDE_MODELS: Dict[str, str] = {
-    "claude-sonnet-4-5-20250929": "Claude Sonnet 4.5 (Recomendado: máxima fidelidad y trazos estilizados)",
+    "claude-sonnet-5-20260630": "Claude Sonnet 5 (Última generación: razonamiento agéntico y visión avanzada)",
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-sonnet-5-latest": "Claude Sonnet 5 Latest",
+    "claude-sonnet-4-5-20250929": "Claude Sonnet 4.5 (Máxima fidelidad y trazos estilizados)",
     "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet (Razonamiento visual avanzado y síntesis espacial)",
     "claude-3-7-sonnet-latest": "Claude 3.7 Sonnet Latest",
     "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet v2 (Alta precisión visual y tool use)",

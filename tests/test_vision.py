@@ -447,7 +447,8 @@ def test_resolve_claude_model_and_env(monkeypatch):
         VisionAgent
     )
 
-    # 1. Por defecto devuelve DEFAULT_CLAUDE_MODEL
+    # 1. Por defecto devuelve DEFAULT_CLAUDE_MODEL (sin variables de entorno ni .env)
+    monkeypatch.setattr("dobot_controller.vision.agent.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
     monkeypatch.delenv("DOBOT_VISION_MODEL", raising=False)
     assert resolve_claude_model() == DEFAULT_CLAUDE_MODEL
@@ -464,6 +465,8 @@ def test_resolve_claude_model_and_env(monkeypatch):
     assert agent.model == "claude-3-7-sonnet-20250219"
 
     # 5. Lista de permitidos contiene los modelos estándar
+    assert "claude-sonnet-5-20260630" in ALLOWED_CLAUDE_MODELS
+    assert "claude-sonnet-5" in ALLOWED_CLAUDE_MODELS
     assert "claude-sonnet-4-5-20250929" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-7-sonnet-20250219" in ALLOWED_CLAUDE_MODELS
     assert "claude-3-5-sonnet-20241022" in ALLOWED_CLAUDE_MODELS

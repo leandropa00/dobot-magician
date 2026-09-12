@@ -39,7 +39,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-20260630"),
         help="Modelo de Claude a utilizar (configurable vía ANTHROPIC_MODEL en .env)"
     )
     args = parser.parse_args()
