@@ -512,9 +512,51 @@ def ai_draw_cmd(
             )
 
 
+@app.command("web")
+def web_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Dirección host del servidor web"),
+    port: int = typer.Option(8000, "--port", "-p", help="Puerto HTTP"),
+    mock: bool = typer.Option(False, "--mock", "-m", help="Forzar modo simulación"),
+    serial_port: Optional[str] = typer.Option(None, "--serial-port", help="Puerto serie Dobot específico"),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Abrir automáticamente en el navegador")
+):
+    """Lanza la interfaz web para captura con cámara, bocetos IA y control del Dobot."""
+    import uvicorn
+    import webbrowser
+    import threading
+    import time
+    from dobot_controller.web.robot_manager import RobotManager
+    import dobot_controller.web.app as web_module
+
+    # Inicializar manager con las opciones dadas
+    web_module.robot_manager = RobotManager(mock=mock, port=serial_port)
+
+    url = f"http://{host}:{port}"
+    console.print(Panel(
+        f"[bold green]🌐 Servidor Web de Dobot Magician Activo[/bold green]\n\n"
+        f"• URL: [bold underline cyan]{url}[/bold underline cyan]\n"
+        f"• Modo: {'[yellow]SIMULACIÓN (Mock)[/yellow]' if web_module.robot_manager.is_mock else '[green]HARDWARE FÍSICO[/green]'}\n"
+        f"• Funcionalidades: Cámara del usuario, síntesis de bocetos IA, flechas de control y punto de inicio\n\n"
+        f"[dim]Presiona Ctrl+C para detener el servidor.[/dim]",
+        title="[bold blue]Dobot Magician Web Studio[/bold blue]"
+    ))
+
+    if open_browser:
+        def _open():
+            time.sleep(1.0)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+        threading.Thread(target=_open, daemon=True).start()
+
+    uvicorn.run(web_module.app, host=host, port=port, log_level="info")
+
+
 def main():
     app()
 
 
 if __name__ == "__main__":
     main()
+

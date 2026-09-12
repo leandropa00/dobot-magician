@@ -110,7 +110,7 @@ class VisualTrajectoryDrawer:
     # Posición inicial del efector final calibrada físicamente sobre el cuaderno (contacto en reposo)
     DEFAULT_CENTER_X: float = 235.50           # Coordenada X (mm)
     DEFAULT_CENTER_Y: float = -10.45           # Coordenada Y (mm)
-    DEFAULT_Z_DRAW: float = -40             # Altura Z de contacto con el papel (mm)
+    DEFAULT_Z_DRAW: float = -38.59             # Altura Z de contacto con el papel (mm)
     DEFAULT_Z_HOVER: float = -23.59            # Altura Z de tránsito en el aire (-38.59 + 15.0 mm)
     DEFAULT_R: float = 5.67                    # Rotación R del efector (grados)
     DEFAULT_MARGIN_MM: float = 15.0            # Margen de seguridad respecto al borde de la hoja

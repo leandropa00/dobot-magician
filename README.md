@@ -171,6 +171,30 @@ python examples/06_gopro_llm_visual_servoing.py --mock --steps 4
 
 ---
 
+## 🌐 Interfaz Web Interactiva (`dobot web`)
+
+La interfaz web permite operar el Dobot Magician directamente desde el navegador con una experiencia visual completa:
+
+1. **Cámara del Usuario:** Visualiza el video de tu cámara en tiempo real mediante WebRTC.
+2. **Captura de Fotografía:** Toma una foto del objeto con el botón `📸 Capturar Foto`.
+3. **Síntesis con IA (Claude):** Envía la imagen con el botón `✨ Enviar al Modelo` para que el modelo identifique el objeto y genere un boceto vectorial optimizado para trazado continuo.
+4. **Previsualización y Confirmación:** El boceto generado se muestra abajo sobre las dimensiones exactas del cuaderno de dibujo, con el botón `✍️ Confirmar y Comenzar a Dibujar`.
+5. **Flechas de Control (Jogging):** Mueve el brazo robótico en el plano XY (+X, -X, +Y, -Y) y altura Z (+Z, -Z) con pasos configurables (1mm a 50mm) o mediante atajos de teclado.
+6. **Punto de Inicio Indicado:** Mueve el brazo con las flechas hasta donde desees iniciar y presiona `🎯 Fijar Posición Actual como Punto de Inicio`. El robot comenzará a dibujar exactamente referenciado a ese punto y cota de contacto Z.
+
+### Iniciar el servidor web:
+```bash
+# Iniciar servidor (abre el navegador en http://localhost:8000 automáticamente):
+dobot web
+
+# En modo simulación (Mock):
+dobot web --mock
+
+# O especificando puerto y host:
+dobot web --host 0.0.0.0 --port 8000
+```
+
+
 ## 🧪 Pruebas Unitarias
 
 Ejecuta el script de pruebas automatizado:

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dobot Magician — AI Visual Drawing Studio</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2224%22>🤖</text></svg>">
+</head>
+<body>
+  <!-- ENCABEZADO -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-icon">🤖</div>
+      <div>
+        <h1>Dobot Magician <span class="highlight">Visual Studio</span></h1>
+        <p class="subtitle">Captura de cámara, síntesis de bocetos con IA y trazado continuo</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="robotStatusBadge">
+        <span class="status-dot"></span>
+        <span id="robotStatusText">Conectando...</span>
+      </div>
+      <div class="mode-toggle">
+        <label for="mockModeSwitch">Simulación:</label>
+        <input type="checkbox" id="mockModeSwitch">
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnReconnect" title="Reconectar con Dobot">🔄 Reconectar</button>
+    </div>
+  </header>
+
+  <!-- CONTENEDOR PRINCIPAL -->
+  <main class="app-main">
+    
+    <!-- COLUMNA IZQUIERDA: CÁMARA, FOTO, MODELO IA Y BOCETO -->
+    <section class="panel panel-camera">
+      <div class="panel-header">
+        <h2>📷 1. Cámara y Captura de Foto</h2>
+        <span class="badge" id="cameraStatus">Iniciando cámara...</span>
+      </div>
+
+      <!-- Visor de Video de la Cámara del Usuario -->
+      <div class="camera-container">
+        <video id="webcamVideo" autoplay playsinline muted></video>
+        <div class="camera-overlay">
+          <div class="focus-reticle"></div>
+          <span class="overlay-hint">Apunta el objeto frente a la cámara</span>
+        </div>
+      </div>
+
+      <!-- Controles de Cámara -->
+      <div class="camera-controls">
+        <select id="cameraSelect" class="form-select" title="Seleccionar cámara">
+          <option value="">Cámara Predeterminada</option>
+        </select>
+        <button class="btn btn-primary" id="btnCapturePhoto">
+          📸 Capturar Foto
+        </button>
+      </div>
+
+      <!-- Foto Capturada -->
+      <div class="section-card snapshot-card" id="snapshotSection" style="display: none;">
+        <div class="card-title">
+          <span>🖼️ Fotografía Capturada</span>
+          <button class="btn btn-sm btn-outline" id="btnRetakePhoto">Tomar otra foto</button>
+        </div>
+        <div class="snapshot-preview-wrapper">
+          <canvas id="snapshotCanvas" style="display: none;"></canvas>
+          <img id="snapshotImg" alt="Foto capturada">
+        </div>
+
+        <div class="prompt-input-group">
+          <label for="promptInput">Instrucción para el Modelo de IA:</label>
+          <input type="text" id="promptInput" class="form-input" 
+                 value="Identifica el objeto en la imagen y sintetiza un boceto de líneas limpias para dibujarlo">
+        </div>
+
+        <button class="btn btn-accent btn-large" id="btnSendToModel">
+          ✨ Enviar al Modelo de IA
+        </button>
+      </div>
+
+      <!-- Spinner de carga del modelo -->
+      <div class="loading-box" id="modelLoadingBox" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loadingMessage">Claude está analizando la imagen y sintetizando la trayectoria de dibujo...</p>
+      </div>
+
+      <!-- SECCIÓN DEL BOCETO GENERADO (Aparece abajo para confirmar) -->
+      <div class="section-card sketch-card" id="sketchSection" style="display: none;">
+        <div class="card-title">
+          <span>🎨 2. Boceto Generado por IA</span>
+          <span class="badge badge-success" id="sketchSubjectBadge">Objeto Detectado</span>
+        </div>
+
+        <p class="sketch-desc">
+          Revisa el boceto y el punto de inicio indicado antes de enviar al robot.
+        </p>
+
+        <!-- Previsualización gráfica del boceto sobre el cuaderno -->
+        <div class="sketch-preview-container">
+          <img id="sketchPreviewImg" alt="Vista previa del boceto y cuaderno">
+        </div>
+
+        <div class="sketch-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Trazos continuos:</span>
+            <span class="meta-value" id="metaStrokeCount">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Puntos totales:</span>
+            <span class="meta-value" id="metaTotalPoints">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Punto de inicio:</span>
+            <span class="meta-value" id="metaOriginPos">X=235.5, Y=-10.5</span>
+          </div>
+        </div>
+
+        <!-- Botones de Confirmación y Dibujo -->
+        <div class="sketch-actions">
+          <button class="btn btn-success btn-xl" id="btnConfirmAndDraw">
+            ✍️ Confirmar y Comenzar a Dibujar
+          </button>
+          <button class="btn btn-danger btn-xl" id="btnStopDrawing" style="display: none;">
+            🛑 Detener Dibujo
+          </button>
+        </div>
+
+        <!-- Barra de progreso durante el dibujo -->
+        <div class="progress-container" id="drawingProgressContainer" style="display: none;">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="drawingProgressBar" style="width: 0%;"></div>
+          </div>
+          <div class="progress-info">
+            <span id="drawingProgressText">Iniciando dibujo continuo...</span>
+            <span id="drawingProgressPercent">0%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COLUMNA DERECHA: CONTROL DEL BRAZO (FLECHAS) Y PUNTO DE INICIO -->
+    <section class="panel panel-robot">
+      <div class="panel-header">
+        <h2>🕹️ 3. Control del Brazo Robótico</h2>
+        <span class="badge badge-info" id="dobotPortInfo">Puerto: Detectando...</span>
+      </div>
+
+      <!-- Coordenadas Actuales del Brazo -->
+      <div class="section-card coordinates-card">
+        <div class="card-title">
+          <span>📍 Posición Actual del Efector</span>
+          <span class="pulse-indicator" title="Monitoreo activo"></span>
+        </div>
+        <div class="coord-grid">
+          <div class="coord-box">
+            <span class="coord-axis">X</span>
+            <span class="coord-val" id="poseX">0.00</span>
+            <span class="coord-unit">mm</span>
+          </div>
+          <div class="coord-box">
+            <span class="coord-axis">Y</span>
+            <span class="coord-val" id="poseY">0.00</span>
+            <span class="coord-unit">mm</span>
+          </div>
+          <div class="coord-box">
+            <span class="coord-axis">Z</span>
+            <span class="coord-val" id="poseZ">0.00</span>
+            <span class="coord-unit">mm</span>
+          </div>
+          <div class="coord-box">
+            <span class="coord-axis">R</span>
+            <span class="coord-val" id="poseR">0.00</span>
+            <span class="coord-unit">°</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selector de Paso de Movimiento -->
+      <div class="step-selector">
+        <span class="step-label">Paso (mm):</span>
+        <div class="step-options">
+          <button class="btn-step" data-step="1">1 mm</button>
+          <button class="btn-step" data-step="5">5 mm</button>
+          <button class="btn-step active" data-step="10">10 mm</button>
+          <button class="btn-step" data-step="25">25 mm</button>
+          <button class="btn-step" data-step="50">50 mm</button>
+        </div>
+      </div>
+
+      <!-- FLECHAS DE CONTROL DE MOVIMIENTO (JOGGING) -->
+      <div class="jog-controls-wrapper">
+        
+        <!-- Flechas Plano XY -->
+        <div class="dpad-container">
+          <div class="dpad-title">Plano Horizontal (X / Y)</div>
+          <div class="dpad-grid">
+            <button class="dpad-btn dpad-diag" id="btnJogDiagUL" title="+X / +Y (Adelante Izq)">↖</button>
+            <button class="dpad-btn dpad-main" id="btnJogXUp" title="+X (Adelante / Alejarse de base)">
+              <span class="arrow">▲</span>
+              <span class="sub">+X</span>
+            </button>
+            <button class="dpad-btn dpad-diag" id="btnJogDiagUR" title="+X / -Y (Adelante Der)">↗</button>
+
+            <button class="dpad-btn dpad-main" id="btnJogYLeft" title="+Y (Izquierda)">
+              <span class="arrow">◄</span>
+              <span class="sub">+Y</span>
+            </button>
+            <button class="dpad-btn dpad-center" id="btnJogHome" title="Ir a Home">
+              <span>🏠</span>
+            </button>
+            <button class="dpad-btn dpad-main" id="btnJogYRight" title="-Y (Derecha)">
+              <span class="arrow">►</span>
+              <span class="sub">-Y</span>
+            </button>
+
+            <button class="dpad-btn dpad-diag" id="btnJogDiagDL" title="-X / +Y (Atrás Izq)">↙</button>
+            <button class="dpad-btn dpad-main" id="btnJogXDown" title="-X (Atrás / Acercarse a base)">
+              <span class="arrow">▼</span>
+              <span class="sub">-X</span>
+            </button>
+            <button class="dpad-btn dpad-diag" id="btnJogDiagDR" title="-X / -Y (Atrás Der)">↘</button>
+          </div>
+        </div>
+
+        <!-- Flechas Eje Z (Altura / Lápiz) -->
+        <div class="z-controls-container">
+          <div class="dpad-title">Eje Vertical (Z)</div>
+          <div class="z-buttons">
+            <button class="z-btn z-up" id="btnJogZUp" title="Subir efector (+Z)">
+              <span class="arrow">▲</span>
+              <span class="label">Subir Lápiz (+Z)</span>
+            </button>
+            <button class="z-btn z-down" id="btnJogZDown" title="Bajar efector (-Z)">
+              <span class="arrow">▼</span>
+              <span class="label">Bajar Lápiz (-Z)</span>
+            </button>
+          </div>
+
+          <div class="quick-presets">
+            <button class="btn btn-sm btn-outline" id="btnPresetHover" title="Elevar a altura de tránsito seguro">
+              ✈️ Subir al Aire
+            </button>
+            <button class="btn btn-sm btn-outline" id="btnPresetPaper" title="Bajar a tocar papel">
+              ✏️ Tocar Papel
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SECCIÓN PUNTO DE INICIO INDICADO ("Que comience a dibujar desde ese punto que se indique") -->
+      <div class="section-card origin-card">
+        <div class="card-title">
+          <span>🎯 Punto de Inicio Indicado</span>
+          <span class="badge badge-accent">Referencia de Dibujo</span>
+        </div>
+        <p class="origin-tip">
+          Mueve el brazo con las flechas hasta donde desees iniciar el dibujo y presiona el botón para fijarlo.
+        </p>
+
+        <div class="origin-display-grid">
+          <div class="origin-input-group">
+            <label>Inicio X (mm):</label>
+            <input type="number" id="originX" class="form-input" step="0.5" value="235.50">
+          </div>
+          <div class="origin-input-group">
+            <label>Inicio Y (mm):</label>
+            <input type="number" id="originY" class="form-input" step="0.5" value="-10.45">
+          </div>
+          <div class="origin-input-group">
+            <label>Z Dibujo (mm):</label>
+            <input type="number" id="originZDraw" class="form-input" step="0.5" value="-38.59" title="Contacto con el papel">
+          </div>
+          <div class="origin-input-group">
+            <label>Z Tránsito (mm):</label>
+            <input type="number" id="originZHover" class="form-input" step="0.5" value="-23.59" title="Altura segura en el aire">
+          </div>
+        </div>
+
+        <div class="origin-actions">
+          <button class="btn btn-accent btn-large" id="btnSetOriginFromCurrent">
+            🎯 Fijar Posición Actual como Punto de Inicio
+          </button>
+          <div class="origin-sub-actions">
+            <button class="btn btn-sm btn-outline" id="btnMoveToOrigin">
+              🚶 Ir al Punto Indicado
+            </button>
+            <button class="btn btn-sm btn-outline" id="btnUpdateOriginManual">
+              💾 Guardar Valores
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <span>Dobot Magician Control & AI Sketching Studio • Antigravity pair-programming</span>
+    <span class="shortcuts-hint">⌨️ Atajos de teclado: Flechas = X/Y | RePág/AvPág = Z | Shift = Paso rápido</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
