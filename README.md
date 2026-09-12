@@ -172,33 +172,33 @@ En esta modalidad de operación, el robot no utiliza trayectorias precalculadas,
 sequenceDiagram
     autonumber
     actor Usuario as Operador / CLI
-    participant Loop as VisualServoLoop
+    participant ServoLoop as VisualServoLoop
     participant Cam as Cámara (GoPro / Mock)
     participant Agent as VisionAgent (Claude VLA)
     participant Bot as DobotController
     participant Safety as SafetyLimits
 
-    Usuario->>Loop: Inicia tarea con objetivo (ej. 'Centra en el cubo rojo')
-    Loop->>Bot: Obtiene pose actual (X, Y, Z, R)
+    Usuario->>ServoLoop: Inicia tarea con objetivo (ej. 'Centra en el cubo rojo')
+    ServoLoop->>Bot: Obtiene pose actual (X, Y, Z, R)
 
     loop Bucle de Control (Paso 1..N hasta finish_task)
-        Loop->>Cam: Captura fotograma visual más reciente
-        Cam-->>Loop: Imagen codificada en Base64
-        Loop->>Agent: Envía imagen + pose actual + objetivo
+        ServoLoop->>Cam: Captura fotograma visual más reciente
+        Cam-->>ServoLoop: Imagen codificada en Base64
+        ServoLoop->>Agent: Envía imagen + pose actual + objetivo
         Agent->>Agent: Razonamiento espacial multimodal (análisis de píxeles vs mm)
-        Agent-->>Loop: Tool Call: move_relative(dx, dy, dz) o finish_task()
+        Agent-->>ServoLoop: Tool Call: move_relative(dx, dy, dz) o finish_task()
 
         alt Comando es finish_task
-            Loop->>Usuario: Objetivo visual alcanzado con éxito
+            ServoLoop->>Usuario: Objetivo visual alcanzado con éxito
         else Comando es move_relative
-            Loop->>Safety: Validar nueva pose (X+dx, Y+dy, Z+dz)
+            ServoLoop->>Safety: Validar nueva pose (X+dx, Y+dy, Z+dz)
             alt Pose Segura
-                Safety-->>Loop: OK
-                Loop->>Bot: move_rel(dx, dy, dz, wait=True)
-                Bot-->>Loop: Movimiento físico completado
+                Safety-->>ServoLoop: OK
+                ServoLoop->>Bot: move_rel(dx, dy, dz, wait=True)
+                Bot-->>ServoLoop: Movimiento físico completado
             else Fuera de Envolvente
-                Safety-->>Loop: Error: SafetyBoundaryError
-                Loop->>Agent: Notifica límite alcanzado para reorientar acción
+                Safety-->>ServoLoop: Error: SafetyBoundaryError
+                ServoLoop->>Agent: Notifica límite alcanzado para reorientar acción
             end
         end
     end
