@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const state = {
     currentStep: 10.0, // mm por paso
     webcamStream: null,
+    cameraMode: 'browser', // 'server' o 'browser'
+    activeCameraSource: null,
     capturedImageBase64: null,
     isDrawing: false,
     hasActiveSketch: false,
@@ -16,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Referencias a elementos del DOM
   const webcamVideo = document.getElementById('webcamVideo');
+  const serverCameraStream = document.getElementById('serverCameraStream');
   const cameraSelect = document.getElementById('cameraSelect');
   const cameraStatus = document.getElementById('cameraStatus');
   const btnCapturePhoto = document.getElementById('btnCapturePhoto');
@@ -68,15 +71,163 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPresetPaper = document.getElementById('btnPresetPaper');
 
   // =========================================================================
-  // 1. INICIALIZACIÓN DE LA CÁMARA DEL USUARIO
+  // 1. INICIALIZACIÓN Y GESTIÓN DE CÁMARAS (GOPRO, V4L2 Y NAVEGADOR)
   // =========================================================================
+
+  async function initCameras() {
+    cameraStatus.textContent = 'Buscando cámaras...';
+    cameraStatus.className = 'badge badge-info';
+
+    // 1. Obtener cámaras del servidor (GoPro, V4L2, Mock)
+    let serverDevices = [];
+    try {
+      const res = await fetch('/api/camera/devices');
+      if (res.ok) {
+        const data = await res.json();
+        serverDevices = data.devices || [];
+      }
+    } catch (e) {
+      console.warn('Error obteniendo cámaras del servidor:', e);
+    }
+
+    // 2. Obtener cámaras locales del navegador
+    let browserDevices = [];
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const allDevs = await navigator.mediaDevices.enumerateDevices();
+        browserDevices = allDevs.filter(d => d.kind === 'videoinput');
+      }
+    } catch (e) {
+      console.warn('Error enumerando cámaras del navegador:', e);
+    }
+
+    cameraSelect.innerHTML = '';
+    let defaultSource = null;
+
+    // Agregar cámaras del servidor (priorizando GoPro HERO12 Black)
+    const goproDev = serverDevices.find(d => d.type === 'gopro');
+    if (serverDevices.length > 0) {
+      const serverGroup = document.createElement('optgroup');
+      serverGroup.label = '📷 Cámaras de Hardware / Servidor';
+      serverDevices.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = `server:${d.id}`;
+        opt.textContent = d.name;
+        serverGroup.appendChild(opt);
+      });
+      cameraSelect.appendChild(serverGroup);
+
+      // Si hay GoPro disponible, seleccionarla por defecto
+      if (goproDev) {
+        defaultSource = `server:${goproDev.id}`;
+      }
+    }
+
+    // Agregar cámaras del navegador
+    if (browserDevices.length > 0) {
+      const browserGroup = document.createElement('optgroup');
+      browserGroup.label = '💻 Cámaras Web del Navegador';
+      browserDevices.forEach((d, idx) => {
+        const opt = document.createElement('option');
+        opt.value = `browser:${d.deviceId}`;
+        opt.textContent = d.label || `Cámara Integrada ${idx + 1}`;
+        browserGroup.appendChild(opt);
+      });
+      cameraSelect.appendChild(browserGroup);
+
+      if (!defaultSource) {
+        defaultSource = `browser:${browserDevices[0].deviceId}`;
+      }
+    } else {
+      const opt = document.createElement('option');
+      opt.value = 'browser:default';
+      opt.textContent = '💻 Cámara Web del Navegador';
+      cameraSelect.appendChild(opt);
+      if (!defaultSource) defaultSource = 'browser:default';
+    }
+
+    // Si encontramos una cámara prioritaria, seleccionarla y activarla
+    if (defaultSource) {
+      cameraSelect.value = defaultSource;
+      await switchCamera(defaultSource);
+    }
+  }
+
+  async function switchCamera(sourceVal) {
+    if (!sourceVal) return;
+    state.activeCameraSource = sourceVal;
+
+    if (sourceVal.startsWith('server:')) {
+      const serverId = sourceVal.replace('server:', '');
+      state.cameraMode = 'server';
+
+      // Detener cámara local del navegador si estaba activa
+      if (state.webcamStream) {
+        state.webcamStream.getTracks().forEach(t => t.stop());
+        state.webcamStream = null;
+        webcamVideo.srcObject = null;
+      }
+
+      webcamVideo.style.display = 'none';
+      serverCameraStream.style.display = 'block';
+
+      cameraStatus.textContent = serverId === 'gopro' ? 'Conectando GoPro...' : 'Conectando cámara...';
+      cameraStatus.className = 'badge badge-info';
+
+      try {
+        const res = await fetch('/api/camera/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: serverId })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          // Asignar el stream MJPEG del backend
+          serverCameraStream.src = `/api/camera/stream?t=${Date.now()}`;
+          if (serverId === 'gopro') {
+            cameraStatus.textContent = '📷 GoPro HERO12 Black Activa';
+            cameraStatus.className = 'badge badge-success';
+          } else if (serverId === 'mock') {
+            cameraStatus.textContent = '🧪 Cámara Simulada Activa';
+            cameraStatus.className = 'badge badge-warning';
+          } else {
+            cameraStatus.textContent = '📹 Cámara V4L2 Activa';
+            cameraStatus.className = 'badge badge-success';
+          }
+        } else {
+          throw new Error(data.detail || 'Error seleccionando cámara');
+        }
+      } catch (err) {
+        console.error('Error al activar cámara del servidor:', err);
+        cameraStatus.textContent = 'Error conectando a cámara';
+        cameraStatus.className = 'badge badge-danger';
+      }
+    } else {
+      // Modo cámara local en navegador
+      state.cameraMode = 'browser';
+      serverCameraStream.style.display = 'none';
+      serverCameraStream.src = '';
+      webcamVideo.style.display = 'block';
+
+      // Liberar servidor en segundo plano
+      fetch('/api/camera/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'browser' })
+      }).catch(() => {});
+
+      const devId = sourceVal.replace('browser:', '');
+      await initWebcam(devId === 'default' ? null : devId);
+    }
+  }
 
   async function initWebcam(deviceId = null) {
     if (state.webcamStream) {
       state.webcamStream.getTracks().forEach(track => track.stop());
+      state.webcamStream = null;
     }
 
-    cameraStatus.textContent = 'Solicitando acceso...';
+    cameraStatus.textContent = 'Solicitando acceso a cámara...';
     cameraStatus.className = 'badge badge-info';
 
     try {
@@ -90,73 +241,72 @@ document.addEventListener('DOMContentLoaded', () => {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       state.webcamStream = stream;
       webcamVideo.srcObject = stream;
-      cameraStatus.textContent = 'Cámara Activa';
+      cameraStatus.textContent = 'Cámara Web Activa';
       cameraStatus.className = 'badge badge-success';
-
-      await enumerateCameras();
     } catch (err) {
-      console.warn('Error al acceder a la cámara del usuario:', err);
+      console.warn('Error al acceder a la cámara del navegador:', err);
       cameraStatus.textContent = 'Cámara no disponible';
       cameraStatus.className = 'badge badge-danger';
     }
   }
 
-  async function enumerateCameras() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
-      
-      const currentSelected = cameraSelect.value;
-      cameraSelect.innerHTML = '';
-      
-      videoDevices.forEach((dev, idx) => {
-        const opt = document.createElement('option');
-        opt.value = dev.deviceId;
-        opt.textContent = dev.label || `Cámara ${idx + 1}`;
-        cameraSelect.appendChild(opt);
-      });
-
-      if (currentSelected && videoDevices.some(d => d.deviceId === currentSelected)) {
-        cameraSelect.value = currentSelected;
-      }
-    } catch (e) {
-      console.warn('Error enumerando cámaras:', e);
-    }
-  }
-
   cameraSelect.addEventListener('change', () => {
-    initWebcam(cameraSelect.value);
+    switchCamera(cameraSelect.value);
   });
 
   // =========================================================================
   // 2. CAPTURAR FOTO CON EL BOTÓN
   // =========================================================================
 
-  btnCapturePhoto.addEventListener('click', () => {
-    if (!state.webcamStream || webcamVideo.videoWidth === 0) {
-      alert('La cámara no está lista o no tiene señal activa.');
-      return;
+  btnCapturePhoto.addEventListener('click', async () => {
+    if (state.cameraMode === 'server') {
+      try {
+        btnCapturePhoto.disabled = true;
+        btnCapturePhoto.textContent = '📸 Capturando de GoPro...';
+
+        const res = await fetch('/api/camera/snapshot');
+        if (!res.ok) {
+          throw new Error('No se pudo obtener fotograma de la GoPro');
+        }
+        const data = await res.json();
+        state.capturedImageBase64 = data.image_base64;
+        snapshotImg.src = data.image_base64;
+
+        snapshotSection.style.display = 'flex';
+        snapshotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {
+        alert('Error capturando foto de la GoPro: ' + e.message);
+      } finally {
+        btnCapturePhoto.disabled = false;
+        btnCapturePhoto.textContent = '📸 Capturar Foto';
+      }
+    } else {
+      if (!state.webcamStream || webcamVideo.videoWidth === 0) {
+        alert('La cámara no está lista o no tiene señal activa.');
+        return;
+      }
+
+      const vw = webcamVideo.videoWidth;
+      const vh = webcamVideo.videoHeight;
+      snapshotCanvas.width = vw;
+      snapshotCanvas.height = vh;
+
+      const ctx = snapshotCanvas.getContext('2d');
+      ctx.drawImage(webcamVideo, 0, 0, vw, vh);
+
+      state.capturedImageBase64 = snapshotCanvas.toDataURL('image/jpeg', 0.90);
+      snapshotImg.src = state.capturedImageBase64;
+
+      snapshotSection.style.display = 'flex';
+      snapshotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-
-    const vw = webcamVideo.videoWidth;
-    const vh = webcamVideo.videoHeight;
-    snapshotCanvas.width = vw;
-    snapshotCanvas.height = vh;
-
-    const ctx = snapshotCanvas.getContext('2d');
-    ctx.drawImage(webcamVideo, 0, 0, vw, vh);
-
-    state.capturedImageBase64 = snapshotCanvas.toDataURL('image/jpeg', 0.90);
-    snapshotImg.src = state.capturedImageBase64;
-
-    snapshotSection.style.display = 'flex';
-    snapshotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   btnRetakePhoto.addEventListener('click', () => {
     snapshotSection.style.display = 'none';
     state.capturedImageBase64 = null;
-    webcamVideo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const targetEl = state.cameraMode === 'server' ? serverCameraStream : webcamVideo;
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   // =========================================================================
@@ -662,6 +812,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(pollStatus, 500);
   pollStatus();
 
-  // Iniciar cámara
-  initWebcam();
+  // Iniciar detección y selección de cámaras (GoPro / Webcam)
+  initCameras();
 });

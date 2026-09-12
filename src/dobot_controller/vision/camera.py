@@ -311,6 +311,14 @@ class GoProCapture:
             return cv2.imwrite(filepath, frame)
         return False
 
+    def read(self) -> Tuple[bool, Optional[np.ndarray]]:
+        """Alias compatible con cv2.VideoCapture."""
+        return self.get_frame()
+
+    def release(self):
+        """Alias compatible con cv2.VideoCapture."""
+        self.close()
+
     def close(self):
         """Libera la cámara, detiene el hilo y envía stop a la GoPro si aplica."""
         self._running = False

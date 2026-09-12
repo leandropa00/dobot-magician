@@ -134,3 +134,25 @@ def test_set_origin_and_start_drawing_from_point(client):
     res_stop = client.post("/api/stop-drawing")
     assert res_stop.status_code == 200
     assert res_stop.json()["status"] in ("cancelling", "not_drawing")
+
+
+def test_camera_devices_and_selection(client):
+    """Verifica detección de cámaras (incluyendo GoPro) y selección de fuente de video."""
+    # 1. Listar dispositivos disponibles
+    res = client.get("/api/camera/devices")
+    assert res.status_code == 200
+    devices = res.json()["devices"]
+    assert len(devices) > 0
+
+    # 2. Seleccionar cámara simulada / mock
+    res_sel = client.post("/api/camera/select", json={"source": "mock"})
+    assert res_sel.status_code == 200
+    assert res_sel.json()["status"] == "ok"
+
+    # 3. Obtener instantánea fotográfica de la cámara
+    res_snap = client.get("/api/camera/snapshot")
+    assert res_snap.status_code == 200
+    data = res_snap.json()
+    assert "image_base64" in data
+    assert data["image_base64"].startswith("data:image/jpeg;base64,")
+

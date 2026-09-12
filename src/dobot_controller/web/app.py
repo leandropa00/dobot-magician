@@ -11,11 +11,12 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from dobot_controller.web.robot_manager import RobotManager
+from dobot_controller.web.camera_manager import camera_manager
 from dobot_controller.safety import SafetyBoundaryError
 
 logger = logging.getLogger(__name__)
@@ -83,9 +84,47 @@ class GenerateSketchRequest(BaseModel):
     instruction: Optional[str] = "Identifica el objeto en la imagen y sintetiza un boceto de líneas limpias para dibujarlo en el cuaderno"
 
 
+class SelectCameraRequest(BaseModel):
+    source: str = Field(..., description="Identificador de la fuente de video (ej. 'gopro', 'mock', 'v4l2:/dev/video0', 'browser')")
+
+
 # ==========================================
 # RUTAS DE LA API
 # ==========================================
+
+@app.get("/api/camera/devices")
+def get_camera_devices():
+    """Lista las cámaras disponibles en el servidor (GoPro, V4L2, Mock)."""
+    return {"devices": camera_manager.list_server_cameras()}
+
+
+@app.post("/api/camera/select")
+def select_camera(req: SelectCameraRequest):
+    """Configura la cámara activa en el servidor."""
+    try:
+        result = camera_manager.set_source(req.source)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/camera/stream")
+def camera_stream():
+    """Stream MJPEG en tiempo real para navegadores."""
+    return StreamingResponse(
+        camera_manager.mjpeg_stream_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/api/camera/snapshot")
+def get_camera_snapshot():
+    """Captura un fotograma de la cámara activa del servidor."""
+    b64 = camera_manager.get_latest_base64()
+    if not b64:
+        raise HTTPException(status_code=503, detail="No hay fotograma disponible de la cámara seleccionada")
+    return {"image_base64": b64}
+
 
 @app.get("/api/status")
 def get_status():
