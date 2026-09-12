@@ -1,10 +1,12 @@
-"""Interfaz de línea de comandos (CLI) para Dobot Magician."""
-
-import typer
+import os
 from typing import Optional
+import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+
+load_dotenv()
 
 from dobot_controller.connection import list_serial_ports, find_dobot_port, check_dialout_permission
 from dobot_controller.controller import DobotController
@@ -377,7 +379,7 @@ def ai_agent_cmd(
     port: Optional[str] = typer.Option(None, "--port", "-p", help="Puerto serie del Dobot"),
     source: Optional[str] = typer.Option(None, "--source", help="Fuente de video (índice 0, 1 o URL)"),
     mock: bool = typer.Option(False, "--mock", "-m", help="Ejecutar en modo simulación (Mock Dobot + Mock Camera)"),
-    model: str = typer.Option("claude-sonnet-4-5-20250929", "--model", help="Modelo de Claude a utilizar")
+    model: Optional[str] = typer.Option(None, "--model", help="Modelo de Claude a utilizar (por defecto configurado en ANTHROPIC_MODEL en .env)")
 ):
     """Inicia el agente inteligente de visión y control visual-motor guiado por Claude."""
     import os
@@ -385,13 +387,15 @@ def ai_agent_cmd(
     load_dotenv()
 
     from dobot_controller.vision.camera import GoProCapture
-    from dobot_controller.vision.agent import VisionAgent
+    from dobot_controller.vision.agent import VisionAgent, resolve_claude_model
     from dobot_controller.vision.visual_servo import VisualServoLoop
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         console.print("[bold red]Error:[/bold red] ANTHROPIC_API_KEY no encontrada. Define la variable en tu entorno o en el archivo .env")
         raise typer.Exit(code=1)
+
+    selected_model = resolve_claude_model(model)
 
     cam_src = None
     if source is not None:
@@ -400,14 +404,14 @@ def ai_agent_cmd(
     console.print(Panel(
         f"[bold cyan]🎯 Objetivo:[/bold cyan] {goal}\n"
         f"[bold yellow]Modo:[/bold yellow] {'SIMULACIÓN (Mock Robot + Mock Camera)' if mock else 'HARDWARE FÍSICO'}\n"
-        f"[bold green]Modelo LLM:[/bold green] {model}\n"
+        f"[bold green]Modelo LLM:[/bold green] {selected_model}\n"
         f"[bold magenta]Persistencia:[/bold magenta] {'Reanudando sesión previa' if resume else 'Nueva sesión'} ([dim]{session_file}[/dim])",
         title="Dobot Magician + GoPro + Claude VLA"
     ))
 
     with DobotController(port=port, mock=mock) as bot:
         with GoProCapture(source=cam_src, mock=mock) as cam:
-            agent = VisionAgent(api_key=api_key, model=model)
+            agent = VisionAgent(api_key=api_key, model=selected_model)
 
             if resume:
                 if os.path.exists(session_file):
@@ -455,7 +459,7 @@ def ai_draw_cmd(
     port: Optional[str] = typer.Option(None, "--port", "-p", help="Puerto serie del Dobot"),
     source: Optional[str] = typer.Option(None, "--source", "-s", help="Fuente de video (índice 0, 1 o URL)"),
     mock: bool = typer.Option(False, "--mock", "-m", help="Ejecutar en modo simulación"),
-    model: str = typer.Option("claude-sonnet-4-5-20250929", "--model", help="Modelo de Claude a utilizar"),
+    model: Optional[str] = typer.Option(None, "--model", help="Modelo de Claude a utilizar (por defecto configurado en ANTHROPIC_MODEL en .env)"),
     preview: str = typer.Option("drawing_preview.png", "--preview", help="Ruta para guardar imagen de previsualización"),
     snapshot: str = typer.Option("captured_subject.jpg", "--snapshot", help="Ruta para guardar la foto capturada del objeto")
 ):
@@ -472,11 +476,14 @@ def ai_draw_cmd(
 
     from dobot_controller.vision.camera import GoProCapture
     from dobot_controller.vision.visual_drawer import VisualTrajectoryDrawer
+    from dobot_controller.vision.agent import resolve_claude_model
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         console.print("[bold red]Error:[/bold red] ANTHROPIC_API_KEY no encontrada. Define la variable en tu entorno o en el archivo .env")
         raise typer.Exit(code=1)
+
+    selected_model = resolve_claude_model(model)
 
     cam_src = None
     if source is not None:
@@ -488,7 +495,7 @@ def ai_draw_cmd(
                 dobot=bot,
                 camera=cam,
                 api_key=api_key,
-                model=model,
+                model=selected_model,
                 center_x=center_x,
                 center_y=center_y,
                 r=r,

@@ -72,7 +72,10 @@
         </div>
 
         <div class="prompt-input-group">
-          <label for="promptInput">Instrucción para el Modelo de IA:</label>
+          <label for="promptInput">
+            Instrucción para el Modelo de Visión
+            <span class="badge badge-accent" id="modelNameBadge">Claude 3.5 Sonnet (Sonnet 4.5)</span>:
+          </label>
           <input type="text" id="promptInput" class="form-input" 
                  value="Identifica el objeto en la imagen y sintetiza un boceto de líneas limpias para dibujarlo">
         </div>
@@ -85,7 +88,7 @@
       <!-- Spinner de carga del modelo -->
       <div class="loading-box" id="modelLoadingBox" style="display: none;">
         <div class="spinner"></div>
-        <p id="loadingMessage">Claude está analizando la imagen y sintetizando la trayectoria de dibujo...</p>
+        <p id="loadingMessage">Claude (Sonnet 4.5) está analizando la imagen y sintetizando la trayectoria de dibujo...</p>
       </div>
 
       <!-- SECCIÓN DEL BOCETO GENERADO (Aparece abajo para confirmar) -->
@@ -96,7 +99,7 @@
         </div>
 
         <p class="sketch-desc">
-          Revisa el boceto y el punto de inicio indicado antes de enviar al robot.
+          Revisa el boceto y la posición inicial antes de enviar al robot.
         </p>
 
         <!-- Previsualización gráfica del boceto sobre el cuaderno -->
@@ -114,8 +117,12 @@
             <span class="meta-value" id="metaTotalPoints">-</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">Punto de inicio:</span>
-            <span class="meta-value" id="metaOriginPos">X=235.5, Y=-10.5</span>
+            <span class="meta-label">Posición inicial:</span>
+            <span class="meta-value" id="metaOriginPos">X=235.5, Y=-10.5, Z=-38.6 mm</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Modelo de Visión:</span>
+            <span class="meta-value" id="metaModelName">claude-sonnet-4-5-20250929</span>
           </div>
         </div>
 
@@ -142,7 +149,7 @@
       </div>
     </section>
 
-    <!-- COLUMNA DERECHA: CONTROL DEL BRAZO (FLECHAS) Y PUNTO DE INICIO -->
+    <!-- COLUMNA DERECHA: CONTROL DEL BRAZO Y POSICIÓN INICIAL -->
     <section class="panel panel-robot">
       <div class="panel-header">
         <h2>🕹️ 3. Control del Brazo Robótico</h2>
@@ -175,6 +182,16 @@
             <span class="coord-axis">R</span>
             <span class="coord-val" id="poseR">0.00</span>
             <span class="coord-unit">°</span>
+          </div>
+        </div>
+
+        <div class="coords-actions">
+          <button class="btn btn-accent btn-large w-full" id="btnSetOriginFromCurrent" title="Persistir la posición actual del efector como posición inicial de dibujo">
+            💾 Persistir como Posición Inicial
+          </button>
+          <div class="origin-saved-hint" id="savedOriginContainer">
+            <span class="hint-label">Posición inicial:</span>
+            <span class="hint-val" id="savedOriginDisplay">X=235.50, Y=-10.45, Z=-38.59 mm</span>
           </div>
         </div>
       </div>
@@ -250,53 +267,6 @@
           </div>
         </div>
 
-      </div>
-
-      <!-- SECCIÓN PUNTO DE INICIO INDICADO ("Que comience a dibujar desde ese punto que se indique") -->
-      <div class="section-card origin-card">
-        <div class="card-title">
-          <div>
-            <span>🎯 Punto de Inicio Indicado</span>
-            <span id="originSaveStatus" class="badge badge-success" style="display: none; margin-left: 0.5rem;">Guardado ✔</span>
-          </div>
-          <span class="badge badge-accent">Referencia de Dibujo</span>
-        </div>
-        <p class="origin-tip">
-          Puedes editar los valores directamente con el teclado o mover el brazo con las flechas y fijar su posición.
-        </p>
-
-        <div class="origin-display-grid">
-          <div class="origin-input-group">
-            <label for="originX">Inicio X (mm):</label>
-            <input type="number" id="originX" class="form-input" step="any" value="235.50">
-          </div>
-          <div class="origin-input-group">
-            <label for="originY">Inicio Y (mm):</label>
-            <input type="number" id="originY" class="form-input" step="any" value="-10.45">
-          </div>
-          <div class="origin-input-group">
-            <label for="originZDraw">Z Dibujo (mm):</label>
-            <input type="number" id="originZDraw" class="form-input" step="any" value="-38.59" title="Contacto con el papel">
-          </div>
-          <div class="origin-input-group">
-            <label for="originZHover">Z Tránsito (mm):</label>
-            <input type="number" id="originZHover" class="form-input" step="any" value="-23.59" title="Altura segura en el aire">
-          </div>
-        </div>
-
-        <div class="origin-actions">
-          <button class="btn btn-accent btn-large" id="btnSetOriginFromCurrent">
-            🎯 Fijar Posición Actual como Punto de Inicio
-          </button>
-          <div class="origin-sub-actions">
-            <button class="btn btn-sm btn-outline" id="btnMoveToOrigin">
-              🚶 Ir al Punto Indicado
-            </button>
-            <button class="btn btn-sm btn-outline" id="btnUpdateOriginManual">
-              💾 Guardar Valores
-            </button>
-          </div>
-        </div>
       </div>
 
     </section>

@@ -25,6 +25,7 @@ from dobot_controller.controller import DobotController
 from dobot_controller.safety import SafetyLimits
 from dobot_controller.drawing import draw_trajectory_sequence
 from dobot_controller.vision.camera import GoProCapture
+from dobot_controller.vision.agent import resolve_claude_model
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -120,7 +121,7 @@ class VisualTrajectoryDrawer:
         dobot: DobotController,
         camera: GoProCapture,
         api_key: Optional[str] = None,
-        model: str = "claude-sonnet-4-5-20250929",
+        model: Optional[str] = None,
         center_x: float = DEFAULT_CENTER_X,
         center_y: float = DEFAULT_CENTER_Y,
         notebook_width: float = DEFAULT_NOTEBOOK_WIDTH_MM,
@@ -136,7 +137,7 @@ class VisualTrajectoryDrawer:
     ):
         self.dobot = dobot
         self.camera = camera
-        self.model = model
+        self.model = resolve_claude_model(model)
         self.center_x = center_x
         self.center_y = center_y
         self.r = r

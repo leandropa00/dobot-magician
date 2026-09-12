@@ -445,6 +445,40 @@ body {
   color: var(--text-dim);
 }
 
+.coords-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.origin-saved-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.origin-saved-hint .hint-label {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.origin-saved-hint .hint-val {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
 .pulse-indicator {
   width: 8px;
   height: 8px;
@@ -644,48 +678,6 @@ body {
 }
 
 .quick-presets .btn {
-  flex: 1;
-}
-
-/* TARJETA PUNTO DE INICIO */
-.origin-card {
-  border-left: 4px solid var(--color-accent);
-}
-
-.origin-tip {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
-
-.origin-display-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.6rem;
-}
-
-.origin-input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.origin-input-group label {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
-
-.origin-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.origin-sub-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.origin-sub-actions .btn {
   flex: 1;
 }
 

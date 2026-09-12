@@ -15,9 +15,12 @@ from dobot_controller.web.robot_manager import RobotManager
 
 
 @pytest.fixture
-def client():
-    # Inicializar manager en modo simulación (mock=True)
+def client(monkeypatch):
+    # Evitar llamadas de red externas a la API de Anthropic durante pruebas unitarias locales
+    monkeypatch.setattr("dobot_controller.web.robot_manager.load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     mgr = RobotManager(mock=True)
+    mgr.anthropic_key = None
     from dobot_controller.web import app as app_module
     app_module.robot_manager = mgr
     return TestClient(app)
@@ -155,4 +158,56 @@ def test_camera_devices_and_selection(client):
     data = res_snap.json()
     assert "image_base64" in data
     assert data["image_base64"].startswith("data:image/jpeg;base64,")
+
+
+def test_start_drawing_preserves_z_height(client):
+    """
+    Verifica que al comenzar a dibujar, se conserve estrictamente la altura Z de Punto de Inicio Indicado.
+    """
+    # 1. Modificar punto de inicio con una altura Z de dibujo y de tránsito específica
+    res_set = client.post("/api/robot/set-origin", json={
+        "x": 230.0,
+        "y": 10.0,
+        "z_draw": -42.5,
+        "z_hover": -27.5
+    })
+    assert res_set.status_code == 200
+    origin = res_set.json()["origin"]
+    assert origin["z_draw"] == -42.5
+    assert origin["z_hover"] == -27.5
+
+    # 2. Generar boceto
+    import numpy as np
+    import cv2
+    dummy_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
+    _, buffer = cv2.imencode(".jpg", dummy_frame)
+    b64_img = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
+    client.post("/api/generate-sketch", json={"image": b64_img})
+
+    # 3. Iniciar dibujo conservando las alturas Z indicadas
+    res_draw = client.post("/api/start-drawing", json={
+        "origin_x": 230.0,
+        "origin_y": 10.0,
+        "origin_z_draw": -42.5,
+        "origin_z_hover": -27.5
+    })
+    assert res_draw.status_code == 200
+    data = res_draw.json()
+    assert data["status"] == "started"
+    assert data["origin"]["z_draw"] == -42.5
+    assert data["origin"]["z_hover"] == -27.5
+
+    # 4. Detener dibujo
+    client.post("/api/stop-drawing")
+
+
+def test_web_status_reports_env_model(client, monkeypatch):
+    """Verifica que /api/status reporte el modelo configurado en ANTHROPIC_MODEL."""
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219")
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["model"] == "claude-3-7-sonnet-20250219"
+
+
 

@@ -47,8 +47,11 @@ def main():
     parser.add_argument("--no-confirm", action="store_true", help="Saltar aprobación manual (por defecto requiere aprobación)")
     parser.add_argument("--auto-capture", action="store_true", help="Capturar automáticamente sin esperar Enter frente a la cámara")
     parser.add_argument("--preview", default="drawing_preview.png", help="Archivo de imagen para la previsualización")
-    parser.add_argument("--snapshot", default="captured_subject.jpg", help="Archivo para guardar el fotograma capturado")
-    parser.add_argument("--model", default="claude-sonnet-4-5-20250929", help="Modelo de Claude a utilizar")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+        help="Modelo de Claude a utilizar (configurable vía ANTHROPIC_MODEL en .env)"
+    )
 
     args = parser.parse_args()
 

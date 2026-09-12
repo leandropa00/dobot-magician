@@ -36,8 +36,12 @@ def main():
     parser.add_argument("--camera-source", type=str, default=None, help="Índice de cámara (0, 1), URL de stream o /dev/videoX")
     parser.add_argument("--goal", type=str, default="Aprende los ejes de la cámara mediante un micro-movimiento y acércate al objetivo rojo", help="Objetivo o instrucción en lenguaje natural")
     parser.add_argument("--steps", type=int, default=None, help="Número máximo de pasos (por defecto None = autónomo sin límite hasta finish_task)")
-    parser.add_argument("--confirm", action="store_true", help="Solicitar confirmación manual antes de ejecutar cada movimiento")
-    parser.add_argument("--model", type=str, default="claude-sonnet-4-5-20250929", help="Modelo de Claude a utilizar")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+        help="Modelo de Claude a utilizar (configurable vía ANTHROPIC_MODEL en .env)"
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")

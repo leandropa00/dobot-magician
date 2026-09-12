@@ -436,3 +436,37 @@ def test_visual_trajectory_drawer_arbitrary_object_and_image_file():
             finally:
                 if os.path.exists(img_path):
                     os.remove(img_path)
+
+
+def test_resolve_claude_model_and_env(monkeypatch):
+    """Verifica que el modelo de Claude sea configurable vía .env (ANTHROPIC_MODEL)."""
+    from dobot_controller.vision.agent import (
+        resolve_claude_model,
+        DEFAULT_CLAUDE_MODEL,
+        ALLOWED_CLAUDE_MODELS,
+        VisionAgent
+    )
+
+    # 1. Por defecto devuelve DEFAULT_CLAUDE_MODEL
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("DOBOT_VISION_MODEL", raising=False)
+    assert resolve_claude_model() == DEFAULT_CLAUDE_MODEL
+
+    # 2. Respeta ANTHROPIC_MODEL desde el entorno/.env
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219")
+    assert resolve_claude_model() == "claude-3-7-sonnet-20250219"
+
+    # 3. Argumento explícito tiene prioridad sobre variable de entorno
+    assert resolve_claude_model("claude-3-5-haiku-20241022") == "claude-3-5-haiku-20241022"
+
+    # 4. VisionAgent inicializado sin argumento usa el modelo configurado
+    agent = VisionAgent(api_key="test-dummy-key")
+    assert agent.model == "claude-3-7-sonnet-20250219"
+
+    # 5. Lista de permitidos contiene los modelos estándar
+    assert "claude-sonnet-4-5-20250929" in ALLOWED_CLAUDE_MODELS
+    assert "claude-3-7-sonnet-20250219" in ALLOWED_CLAUDE_MODELS
+    assert "claude-3-5-sonnet-20241022" in ALLOWED_CLAUDE_MODELS
+    assert "claude-3-5-haiku-20241022" in ALLOWED_CLAUDE_MODELS
+    assert "claude-3-opus-20240229" in ALLOWED_CLAUDE_MODELS
+

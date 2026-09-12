@@ -12,6 +12,8 @@ import time
 import base64
 import logging
 import threading
+import json
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
 
@@ -22,19 +24,23 @@ from dobot_controller.controller import DobotController
 from dobot_controller.safety import SafetyLimits, SafetyBoundaryError
 from dobot_controller.drawing import draw_stroke
 from dobot_controller.vision.visual_drawer import DRAWING_PROMPT, DRAWING_TOOL
+from dobot_controller.vision.agent import resolve_claude_model
 from pydobotplus.dobotplus import MODE_PTP
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+ORIGIN_CONFIG_FILE = Path(".dobot_origin.json")
+
 
 class RobotManager:
     """Manejador thread-safe del Dobot Magician para la aplicación web."""
 
-    def __init__(self, mock: bool = False, port: Optional[str] = None):
-        self._lock = threading.Lock()
+    def __init__(self, mock: bool = False, port: Optional[str] = None, model: Optional[str] = None):
+        self._lock = threading.RLock()
         self.mock_requested = mock
         self.specified_port = port
+        self._model = model
 
         # Parámetros del papel y dibujo
         self.notebook_width: float = 250.0   # mm
@@ -49,6 +55,9 @@ class RobotManager:
         self.origin_z_draw: float = -38.59
         self.origin_z_hover: float = -23.59
         self.origin_r: float = 5.67
+
+        # Cargar configuración persistente de punto de inicio si existe
+        self._load_saved_origin()
 
         # Velocidad y aceleración
         self.velocity: float = 40.0
@@ -75,11 +84,19 @@ class RobotManager:
         self.is_mock: bool = False
         self.last_error: Optional[str] = None
 
-        # Cliente Anthropic
+        # Cliente Anthropic y modelo
+        load_dotenv(override=True)
         self.anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-        self.model = "claude-sonnet-4-5-20250929"
 
         self._connect_internal()
+
+    @property
+    def model(self) -> str:
+        return resolve_claude_model(self._model)
+
+    @model.setter
+    def model(self, value: Optional[str]):
+        self._model = value
 
     def _connect_internal(self):
         """Conecta al robot físico o conmuta a simulación si no se detecta hardware."""
@@ -169,6 +186,7 @@ class RobotManager:
                 "stroke_count": len(self.current_sketch["robot_strokes"]) if self.current_sketch else 0,
                 "total_points": self.current_sketch["total_points"] if self.current_sketch else 0
             } if self.current_sketch else None,
+            "model": self.model,
             "last_error": self.last_error
         }
 
@@ -228,6 +246,40 @@ class RobotManager:
     # PUNTO DE INICIO INDICADO PARA DIBUJAR
     # ==========================================
 
+    def _load_saved_origin(self):
+        """Carga el punto de inicio previamente configurado si existe para no perder la calibración."""
+        try:
+            if ORIGIN_CONFIG_FILE.exists():
+                with open(ORIGIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.origin_x = round(float(data.get("x", self.origin_x)), 2)
+                    self.origin_y = round(float(data.get("y", self.origin_y)), 2)
+                    self.origin_z_draw = round(float(data.get("z_draw", self.origin_z_draw)), 2)
+                    self.origin_z_hover = round(float(data.get("z_hover", self.origin_z_draw + 15.0)), 2)
+                    self.origin_r = round(float(data.get("r", self.origin_r)), 2)
+                    logger.info(
+                        f"Punto de inicio persistido cargado: X={self.origin_x}, Y={self.origin_y}, "
+                        f"Z_draw={self.origin_z_draw}, Z_hover={self.origin_z_hover}"
+                    )
+        except Exception as e:
+            logger.warning(f"No se pudo cargar {ORIGIN_CONFIG_FILE}: {e}")
+
+    def _save_origin_to_disk(self):
+        """Persiste el punto de inicio en disco para que se conserve entre sesiones y ejecuciones."""
+        try:
+            data = {
+                "x": self.origin_x,
+                "y": self.origin_y,
+                "z_draw": self.origin_z_draw,
+                "z_hover": self.origin_z_hover,
+                "r": self.origin_r
+            }
+            with open(ORIGIN_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            logger.debug(f"Punto de inicio guardado en {ORIGIN_CONFIG_FILE}")
+        except Exception as e:
+            logger.warning(f"No se pudo guardar {ORIGIN_CONFIG_FILE}: {e}")
+
     def set_current_as_origin(self) -> Dict[str, Any]:
         """
         Fija la posición cartesiana actual del brazo como el punto de inicio / centro de dibujo.
@@ -243,6 +295,7 @@ class RobotManager:
             self.origin_z_draw = round(float(pose["z"]), 2)
             self.origin_z_hover = round(self.origin_z_draw + 15.0, 2)
             self.origin_r = round(float(pose["r"]), 2)
+            self._save_origin_to_disk()
 
         # Si ya hay un boceto cargado, recalculamos los trazos para que comience desde este nuevo punto
         if self.current_sketch:
@@ -264,19 +317,22 @@ class RobotManager:
         z_hover: Optional[float] = None,
         r: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Establece manualmente el punto de inicio de dibujo."""
-        if x is not None:
-            self.origin_x = round(float(x), 2)
-        if y is not None:
-            self.origin_y = round(float(y), 2)
-        if z_draw is not None:
-            self.origin_z_draw = round(float(z_draw), 2)
-            if z_hover is None:
-                self.origin_z_hover = round(self.origin_z_draw + 15.0, 2)
-        if z_hover is not None:
-            self.origin_z_hover = round(float(z_hover), 2)
-        if r is not None:
-            self.origin_r = round(float(r), 2)
+        """Establece manualmente el punto de inicio de dibujo y conserva las alturas."""
+        with self._lock:
+            if x is not None:
+                self.origin_x = round(float(x), 2)
+            if y is not None:
+                self.origin_y = round(float(y), 2)
+            if z_draw is not None:
+                self.origin_z_draw = round(float(z_draw), 2)
+                if z_hover is None:
+                    self.origin_z_hover = round(self.origin_z_draw + 15.0, 2)
+            if z_hover is not None:
+                self.origin_z_hover = round(float(z_hover), 2)
+            if r is not None:
+                self.origin_r = round(float(r), 2)
+
+            self._save_origin_to_disk()
 
         if self.current_sketch:
             self._recalculate_current_sketch()
@@ -317,7 +373,9 @@ class RobotManager:
         subject = "Objeto detectado"
         raw_strokes: List[Dict[str, Any]] = []
 
+        load_dotenv(override=True)
         api_key = self.anthropic_key or os.environ.get("ANTHROPIC_API_KEY")
+        self.model = resolve_claude_model(self.model)
 
         if api_key:
             try:
@@ -562,33 +620,63 @@ class RobotManager:
     # EJECUCIÓN CONTINUA DEL DIBUJO
     # ==========================================
 
-    def start_drawing(self) -> Dict[str, Any]:
-        """Inicia el dibujo de forma asíncrona a partir del punto indicado."""
+    def start_drawing(
+        self,
+        origin_x: Optional[float] = None,
+        origin_y: Optional[float] = None,
+        origin_z_draw: Optional[float] = None,
+        origin_z_hover: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Inicia el dibujo de forma asíncrona a partir del punto indicado, conservando la altura Z."""
         if not self.bot or not self.is_connected:
             raise RuntimeError("Robot no conectado.")
 
-        if not self.current_sketch or not self.current_sketch.get("robot_strokes"):
-            raise RuntimeError("No hay un boceto confirmado para dibujar.")
+        with self._lock:
+            # Si se proporcionan coordenadas explícitas, actualizarlas y persistirlas inmediatamente
+            if (
+                origin_x is not None or
+                origin_y is not None or
+                origin_z_draw is not None or
+                origin_z_hover is not None
+            ):
+                self.set_origin(
+                    x=origin_x,
+                    y=origin_y,
+                    z_draw=origin_z_draw,
+                    z_hover=origin_z_hover
+                )
 
-        if self.is_drawing:
-            raise RuntimeError("Ya se está ejecutando un dibujo actualmente.")
+            if not self.current_sketch or not self.current_sketch.get("robot_strokes"):
+                raise RuntimeError("No hay un boceto confirmado para dibujar.")
 
-        self._cancel_drawing.clear()
-        self.is_drawing = True
-        self.drawing_progress = {
-            "is_drawing": True,
-            "current_stroke": 0,
-            "total_strokes": len(self.current_sketch["robot_strokes"]),
-            "stroke_name": "Iniciando",
-            "percent": 0.0,
-            "message": "Elevando a altura de tránsito y preparando lápiz...",
-            "error": None
+            if self.is_drawing:
+                raise RuntimeError("Ya se está ejecutando un dibujo actualmente.")
+
+            self._cancel_drawing.clear()
+            self.is_drawing = True
+            self.drawing_progress = {
+                "is_drawing": True,
+                "current_stroke": 0,
+                "total_strokes": len(self.current_sketch["robot_strokes"]),
+                "stroke_name": "Iniciando",
+                "percent": 0.0,
+                "message": f"Elevando a altura de tránsito (Z_hover={self.origin_z_hover} mm) y preparando lápiz (Z_draw={self.origin_z_draw} mm)...",
+                "error": None
+            }
+
+            self.drawing_thread = threading.Thread(target=self._run_drawing_worker, daemon=True)
+            self.drawing_thread.start()
+
+        return {
+            "status": "started",
+            "strokes": len(self.current_sketch["robot_strokes"]),
+            "origin": {
+                "x": self.origin_x,
+                "y": self.origin_y,
+                "z_draw": self.origin_z_draw,
+                "z_hover": self.origin_z_hover
+            }
         }
-
-        self.drawing_thread = threading.Thread(target=self._run_drawing_worker, daemon=True)
-        self.drawing_thread.start()
-
-        return {"status": "started", "strokes": len(self.current_sketch["robot_strokes"])}
 
     def stop_drawing(self) -> Dict[str, Any]:
         """Detiene inmediatamente el proceso de dibujo."""
@@ -610,12 +698,20 @@ class RobotManager:
                 # 1. Configurar velocidad
                 self.bot.set_speed(velocity=self.velocity, acceleration=self.acceleration)
 
-                # 2. Elevar verticalmente a altura de tránsito sobre el punto de inicio indicado
-                self.drawing_progress["message"] = f"Subiendo brazo verticalmente a Z_hover={self.origin_z_hover} mm..."
-                cur = self.bot.get_pose()
-                self.bot.move_to(x=cur["x"], y=cur["y"], z=self.origin_z_hover, r=self.origin_r, wait=True, mode=MODE_PTP.MOVL_XYZ)
+                # 2. Conservar estrictamente las alturas Z del Punto de Inicio Indicado
+                z_draw = float(self.origin_z_draw)
+                z_hover = float(self.origin_z_hover)
+                logger.info(
+                    f"Comenzando dibujo con altura Z conservada de Punto de Inicio Indicado: "
+                    f"Z_draw={z_draw} mm, Z_hover={z_hover} mm"
+                )
 
-                # 3. Ejecutar trazos continuos
+                # 3. Elevar verticalmente a altura de tránsito sobre la posición actual
+                self.drawing_progress["message"] = f"Subiendo brazo verticalmente a Z_hover={z_hover} mm..."
+                cur = self.bot.get_pose()
+                self.bot.move_to(x=cur["x"], y=cur["y"], z=z_hover, r=self.origin_r, wait=True, mode=MODE_PTP.MOVL_XYZ)
+
+                # 4. Ejecutar trazos continuos
                 for idx, stroke in enumerate(strokes, start=1):
                     if self._cancel_drawing.is_set():
                         logger.warning("Dibujo cancelado por el usuario.")
@@ -627,27 +723,27 @@ class RobotManager:
                     self.drawing_progress["current_stroke"] = idx
                     self.drawing_progress["stroke_name"] = name
                     self.drawing_progress["percent"] = round(((idx - 1) / total_strokes) * 100.0, 1)
-                    self.drawing_progress["message"] = f"Dibujando {idx}/{total_strokes}: {name} ({len(pts)} puntos)"
+                    self.drawing_progress["message"] = f"Dibujando {idx}/{total_strokes}: {name} ({len(pts)} puntos) [Z={z_draw} mm]"
 
-                    # Dibujar trazo continuo
+                    # Dibujar trazo continuo conservando estrictamente z_draw
                     draw_stroke(
                         bot=self.bot,
                         points=pts,
-                        z_draw=self.origin_z_draw,
-                        z_hover=self.origin_z_hover
+                        z_draw=z_draw,
+                        z_hover=z_hover
                     )
 
-                # 4. Finalizar y regresar al punto de inicio indicado
+                # 5. Finalizar y regresar al punto de inicio indicado conservando z_draw
                 if not self._cancel_drawing.is_set():
                     self.drawing_progress["percent"] = 100.0
                     duration = time.time() - start_time
                     self.drawing_progress["message"] = f"¡Dibujo completado con éxito en {duration:.1f} s!"
                     logger.info("Dibujo completado. Regresando al punto de inicio indicado...")
-                    self.bot.move_to(x=self.origin_x, y=self.origin_y, z=self.origin_z_hover, r=self.origin_r, wait=True, mode=MODE_PTP.MOVJ_XYZ)
-                    self.bot.move_to(x=self.origin_x, y=self.origin_y, z=self.origin_z_draw, r=self.origin_r, wait=True, mode=MODE_PTP.MOVL_XYZ)
+                    self.bot.move_to(x=self.origin_x, y=self.origin_y, z=z_hover, r=self.origin_r, wait=True, mode=MODE_PTP.MOVJ_XYZ)
+                    self.bot.move_to(x=self.origin_x, y=self.origin_y, z=z_draw, r=self.origin_r, wait=True, mode=MODE_PTP.MOVL_XYZ)
                 else:
                     cur = self.bot.get_pose()
-                    self.bot.move_to(x=cur["x"], y=cur["y"], z=self.origin_z_hover, wait=True, mode=MODE_PTP.MOVL_XYZ)
+                    self.bot.move_to(x=cur["x"], y=cur["y"], z=z_hover, wait=True, mode=MODE_PTP.MOVL_XYZ)
 
         except Exception as e:
             logger.error(f"Error durante la ejecución del dibujo: {e}", exc_info=True)

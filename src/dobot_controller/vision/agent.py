@@ -15,6 +15,45 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Modelo por defecto
+DEFAULT_CLAUDE_MODEL: str = "claude-sonnet-4-5-20250929"
+
+# Modelos oficiales de Anthropic con capacidades multimodales (Visión + Tool Use) permitidos
+ALLOWED_CLAUDE_MODELS: Dict[str, str] = {
+    "claude-sonnet-4-5-20250929": "Claude Sonnet 4.5 (Recomendado: máxima fidelidad y trazos estilizados)",
+    "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet (Razonamiento visual avanzado y síntesis espacial)",
+    "claude-3-7-sonnet-latest": "Claude 3.7 Sonnet Latest",
+    "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet v2 (Alta precisión visual y tool use)",
+    "claude-3-5-sonnet-20240620": "Claude 3.5 Sonnet v1",
+    "claude-3-5-sonnet-latest": "Claude 3.5 Sonnet Latest",
+    "claude-3-5-haiku-20241022": "Claude 3.5 Haiku (Rápido y económico, trazos esquemáticos)",
+    "claude-3-5-haiku-latest": "Claude 3.5 Haiku Latest",
+    "claude-3-opus-20240229": "Claude 3 Opus (Alta complejidad semántica)",
+    "claude-3-opus-latest": "Claude 3 Opus Latest",
+}
+
+
+def resolve_claude_model(requested_model: Optional[str] = None) -> str:
+    """
+    Resuelve el modelo de Claude a utilizar, priorizando:
+    1. requested_model (si se especifica explícitamente y no está vacío)
+    2. Variable de entorno ANTHROPIC_MODEL (definida en el sistema o en el archivo .env)
+    3. Variable de entorno DOBOT_VISION_MODEL (alias alternativo)
+    4. DEFAULT_CLAUDE_MODEL ("claude-sonnet-4-5-20250929")
+    """
+    load_dotenv(override=False)
+    env_model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("DOBOT_VISION_MODEL")
+    model = (requested_model or env_model or DEFAULT_CLAUDE_MODEL).strip()
+
+    if model not in ALLOWED_CLAUDE_MODELS:
+        logger.warning(
+            f"El modelo '{model}' no está en la lista estándar de modelos testeados "
+            f"({', '.join(ALLOWED_CLAUDE_MODELS.keys())}), pero se intentará utilizar con Anthropic API."
+        )
+
+    return model
+
+
 # Definición de herramientas para Claude
 ROBOT_TOOLS = [
     {
@@ -193,7 +232,7 @@ class VisionAgent:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "claude-sonnet-4-5-20250929",
+        model: Optional[str] = None,
         max_tokens: int = 1024,
         temperature: float = 0.2
     ):
@@ -201,7 +240,7 @@ class VisionAgent:
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY no encontrada en entorno ni argumento.")
 
-        self.model = model
+        self.model = resolve_claude_model(model)
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.client = anthropic.Anthropic(api_key=self.api_key)

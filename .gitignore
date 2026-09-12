@@ -48,6 +48,7 @@ htmlcov/
 # AI Agent sessions
 .dobot_ai_session.json
 *.ai_session.json
+.dobot_origin.json
 
 # Visual Drawing temp files
 captured_subject.jpg

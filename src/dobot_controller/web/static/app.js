@@ -16,6 +16,17 @@ document.addEventListener('DOMContentLoaded', () => {
     origin: { x: 235.5, y: -10.45, z_draw: -38.59, z_hover: -23.59 }
   };
 
+  // Cargar punto de inicio persistido en el navegador si existe
+  try {
+    const saved = localStorage.getItem('dobot_origin');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      state.origin = { ...state.origin, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Error leyendo dobot_origin de localStorage:', e);
+  }
+
   // Referencias a elementos del DOM
   const webcamVideo = document.getElementById('webcamVideo');
   const serverCameraStream = document.getElementById('serverCameraStream');
@@ -38,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const metaStrokeCount = document.getElementById('metaStrokeCount');
   const metaTotalPoints = document.getElementById('metaTotalPoints');
   const metaOriginPos = document.getElementById('metaOriginPos');
+  const metaModelName = document.getElementById('metaModelName');
   const btnConfirmAndDraw = document.getElementById('btnConfirmAndDraw');
   const btnStopDrawing = document.getElementById('btnStopDrawing');
   const drawingProgressContainer = document.getElementById('drawingProgressContainer');
@@ -56,15 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const poseZ = document.getElementById('poseZ');
   const poseR = document.getElementById('poseR');
 
-  // Punto de Inicio Indicado
-  const originX = document.getElementById('originX');
-  const originY = document.getElementById('originY');
-  const originZDraw = document.getElementById('originZDraw');
-  const originZHover = document.getElementById('originZHover');
-  const originSaveStatus = document.getElementById('originSaveStatus');
+  // Posición Inicial Persistida
   const btnSetOriginFromCurrent = document.getElementById('btnSetOriginFromCurrent');
-  const btnMoveToOrigin = document.getElementById('btnMoveToOrigin');
-  const btnUpdateOriginManual = document.getElementById('btnUpdateOriginManual');
+  const savedOriginDisplay = document.getElementById('savedOriginDisplay');
 
   // Presets y Z
   const btnPresetHover = document.getElementById('btnPresetHover');
@@ -346,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
       sketchPreviewImg.src = data.preview_image;
       metaStrokeCount.textContent = `${data.stroke_count} trazos`;
       metaTotalPoints.textContent = `${data.total_points} puntos`;
-      metaOriginPos.textContent = `X=${state.origin.x.toFixed(1)}, Y=${state.origin.y.toFixed(1)}`;
+      metaOriginPos.textContent = `X=${state.origin.x.toFixed(1)}, Y=${state.origin.y.toFixed(1)}, Z=${state.origin.z_draw.toFixed(1)} mm`;
 
       state.hasActiveSketch = true;
       sketchSection.style.display = 'flex';
@@ -375,7 +381,18 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (!confirm(`¿Iniciar dibujo robótico a partir del punto indicado (X=${state.origin.x}, Y=${state.origin.y})?`)) {
+    const x = Number(state.origin.x);
+    const y = Number(state.origin.y);
+    const z_draw = Number(state.origin.z_draw);
+    const z_hover = Number(state.origin.z_hover);
+
+    const confirmMsg = `¿Iniciar dibujo robótico a partir de la Posición Inicial?\n\n` +
+      `• Coordenadas: X=${x.toFixed(2)} mm, Y=${y.toFixed(2)} mm\n` +
+      `• Altura Z (Contacto Papel): ${z_draw.toFixed(2)} mm\n` +
+      `• Altura Z (Tránsito Aire): ${z_hover.toFixed(2)} mm\n\n` +
+      `El robot conservará estrictamente la altura Z de contacto de la posición inicial.`;
+
+    if (!confirm(confirmMsg)) {
       return;
     }
 
@@ -385,9 +402,18 @@ document.addEventListener('DOMContentLoaded', () => {
       drawingProgressContainer.style.display = 'flex';
       drawingProgressBar.style.width = '0%';
       drawingProgressPercent.textContent = '0%';
-      drawingProgressText.textContent = 'Elevando brazo y preparando trazos...';
+      drawingProgressText.textContent = `Iniciando dibujo: conservando Z=${z_draw.toFixed(2)} mm...`;
 
-      const res = await fetch('/api/start-drawing', { method: 'POST' });
+      const res = await fetch('/api/start-drawing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin_x: x,
+          origin_y: y,
+          origin_z_draw: z_draw,
+          origin_z_hover: z_hover
+        })
+      });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Error al iniciar dibujo');
@@ -576,128 +602,42 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 6. PUNTO DE INICIO INDICADO ("Que comience a dibujar desde ese punto que se indique")
+  // 6. PERSISTENCIA DE POSICIÓN INICIAL DESDE LA POSICIÓN ACTUAL DEL EFECTOR
   // =========================================================================
 
-  const originInputs = [originX, originY, originZDraw, originZHover];
+  if (btnSetOriginFromCurrent) {
+    btnSetOriginFromCurrent.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/robot/set-origin-from-current', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          state.origin = data.origin;
+          try {
+            localStorage.setItem('dobot_origin', JSON.stringify(data.origin));
+          } catch (e) {}
+          updateOriginDisplay(data.origin);
 
-  function showSaveIndicator(msg = 'Guardado ✔') {
-    if (!originSaveStatus) return;
-    originSaveStatus.textContent = msg;
-    originSaveStatus.style.display = 'inline-block';
-    setTimeout(() => {
-      originSaveStatus.style.display = 'none';
-    }, 2000);
-  }
+          // Si ya hay boceto generado, actualizar vista previa con la nueva ubicación
+          if (data.sketch_updated) {
+            refreshPreview();
+          }
 
-  async function saveManualOrigin(silent = false) {
-    const x = parseFloat(originX.value);
-    const y = parseFloat(originY.value);
-    const z_draw = parseFloat(originZDraw.value);
-    const z_hover = parseFloat(originZHover.value);
-
-    if (isNaN(x) || isNaN(y) || isNaN(z_draw) || isNaN(z_hover)) {
-      if (!silent) alert('Por favor introduce números válidos en todos los campos de coordenadas.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/robot/set-origin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ x, y, z_draw, z_hover })
-      });
-
-      const data = await res.json();
-      if (data.status === 'ok') {
-        state.origin = data.origin;
-        updateOriginDisplay(data.origin, true);
-        if (data.sketch_updated) {
-          refreshPreview();
-        }
-        showSaveIndicator('Guardado ✔');
-
-        if (!silent) {
-          const originalText = btnUpdateOriginManual.textContent;
-          btnUpdateOriginManual.textContent = '💾 ¡Guardado!';
-          btnUpdateOriginManual.classList.add('btn-success');
+          // Efecto visual de confirmación en el botón
+          const originalText = btnSetOriginFromCurrent.textContent;
+          btnSetOriginFromCurrent.textContent = '✔ ¡Posición Inicial Guardada!';
+          btnSetOriginFromCurrent.classList.add('btn-success');
           setTimeout(() => {
-            btnUpdateOriginManual.textContent = originalText;
-            btnUpdateOriginManual.classList.remove('btn-success');
-          }, 1500);
+            btnSetOriginFromCurrent.textContent = originalText;
+            btnSetOriginFromCurrent.classList.remove('btn-success');
+          }, 1800);
+        } else {
+          alert('Error al persistir posición inicial: ' + (data.detail || JSON.stringify(data)));
         }
-      } else if (!silent) {
-        alert('Error al guardar valores de origen: ' + (data.detail || JSON.stringify(data)));
+      } catch (e) {
+        alert('Error de conexión al persistir posición inicial: ' + e.message);
       }
-    } catch (e) {
-      if (!silent) alert('Error de conexión al guardar valores: ' + e.message);
-    }
+    });
   }
-
-  // Permitir edición fluida en los campos numéricos sin ser interrumpido por el sondeo
-  originInputs.forEach(input => {
-    // Al presionar Enter, guardar inmediatamente y retirar el foco
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        input.blur();
-        saveManualOrigin(false);
-      }
-    });
-
-    // Al perder el foco o cambiar el valor, autoguardar
-    input.addEventListener('change', () => {
-      saveManualOrigin(true);
-    });
-  });
-
-  // Si cambia Z de dibujo, sugerir automáticamente Z de tránsito (+15mm) si no está enfocado
-  originZDraw.addEventListener('input', () => {
-    const zd = parseFloat(originZDraw.value);
-    if (!isNaN(zd) && document.activeElement !== originZHover) {
-      originZHover.value = (zd + 15.0).toFixed(2);
-    }
-  });
-
-  btnSetOriginFromCurrent.addEventListener('click', async () => {
-    try {
-      const res = await fetch('/api/robot/set-origin-from-current', { method: 'POST' });
-      const data = await res.json();
-      if (data.status === 'ok') {
-        updateOriginDisplay(data.origin, true);
-
-        // Si ya hay boceto, actualizar vista previa con la nueva ubicación
-        if (data.sketch_updated) {
-          refreshPreview();
-        }
-
-        showSaveIndicator('¡Fijado desde Brazo!');
-
-        // Efecto visual de confirmación en el botón
-        const originalText = btnSetOriginFromCurrent.textContent;
-        btnSetOriginFromCurrent.textContent = '✔ ¡Punto de Inicio Establecido!';
-        btnSetOriginFromCurrent.classList.add('btn-success');
-        setTimeout(() => {
-          btnSetOriginFromCurrent.textContent = originalText;
-          btnSetOriginFromCurrent.classList.remove('btn-success');
-        }, 1500);
-      }
-    } catch (e) {
-      alert('Error fijando punto de inicio: ' + e);
-    }
-  });
-
-  btnMoveToOrigin.addEventListener('click', async () => {
-    try {
-      await fetch('/api/robot/move-to-origin?hover=true', { method: 'POST' });
-    } catch (e) {
-      console.error(e);
-    }
-  });
-
-  btnUpdateOriginManual.addEventListener('click', () => {
-    saveManualOrigin(false);
-  });
 
   async function refreshPreview() {
     try {
@@ -705,7 +645,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const data = await res.json();
         sketchPreviewImg.src = data.preview_image;
-        metaOriginPos.textContent = `X=${data.origin.x.toFixed(1)}, Y=${data.origin.y.toFixed(1)}`;
+        if (metaOriginPos) {
+          metaOriginPos.textContent = `X=${data.origin.x.toFixed(1)}, Y=${data.origin.y.toFixed(1)}, Z=${data.origin.z_draw.toFixed(1)} mm`;
+        }
       }
     } catch (e) {
       console.warn('Error refrescando preview:', e);
@@ -725,27 +667,16 @@ document.addEventListener('DOMContentLoaded', () => {
     poseR.textContent = Number(pose.r).toFixed(2);
   }
 
-  function updateOriginDisplay(orig, force = false) {
+  function updateOriginDisplay(orig) {
     if (!orig) return;
     state.origin = orig;
 
-    // Si algún input de origen tiene el foco activo (el usuario está escribiendo), NO sobreescribir salvo forzado
-    if (!force) {
-      const isFocused = originInputs.some(el => document.activeElement === el);
-      if (isFocused) return;
+    if (metaOriginPos) {
+      metaOriginPos.textContent = `X=${Number(orig.x).toFixed(1)}, Y=${Number(orig.y).toFixed(1)}, Z=${Number(orig.z_draw).toFixed(1)} mm`;
     }
 
-    if (force || document.activeElement !== originX) {
-      originX.value = Number(orig.x).toFixed(2);
-    }
-    if (force || document.activeElement !== originY) {
-      originY.value = Number(orig.y).toFixed(2);
-    }
-    if (force || document.activeElement !== originZDraw) {
-      originZDraw.value = Number(orig.z_draw).toFixed(2);
-    }
-    if (force || document.activeElement !== originZHover) {
-      originZHover.value = Number(orig.z_hover).toFixed(2);
+    if (savedOriginDisplay) {
+      savedOriginDisplay.textContent = `X=${Number(orig.x).toFixed(2)}, Y=${Number(orig.y).toFixed(2)}, Z=${Number(orig.z_draw).toFixed(2)} mm`;
     }
   }
 
@@ -757,6 +688,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updatePoseDisplay(data.pose);
       if (data.origin) updateOriginDisplay(data.origin, false);
+
+      // Mostrar modelo configurado
+      if (data.model) {
+        if (metaModelName) metaModelName.textContent = data.model;
+        const modelBadge = document.getElementById('modelNameBadge');
+        if (modelBadge) modelBadge.textContent = data.model;
+      }
 
       // Estado de conexión
       robotStatusBadge.className = 'status-badge';
@@ -807,6 +745,9 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(e);
     }
   });
+
+  // Mostrar posición inicial cargada
+  updateOriginDisplay(state.origin);
 
   // Iniciar sondeo continuo
   setInterval(pollStatus, 500);

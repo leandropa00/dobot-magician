@@ -79,6 +79,13 @@ class SetOriginRequest(BaseModel):
     r: Optional[float] = None
 
 
+class StartDrawingRequest(BaseModel):
+    origin_x: Optional[float] = None
+    origin_y: Optional[float] = None
+    origin_z_draw: Optional[float] = None
+    origin_z_hover: Optional[float] = None
+
+
 class GenerateSketchRequest(BaseModel):
     image: str = Field(..., description="Imagen en formato base64 JPEG capturada por la cámara del usuario")
     instruction: Optional[str] = "Identifica el objeto en la imagen y sintetiza un boceto de líneas limpias para dibujarlo en el cuaderno"
@@ -241,11 +248,21 @@ def update_preview():
 
 
 @app.post("/api/start-drawing")
-def start_drawing():
-    """Confirma el boceto e inicia el dibujo en el Dobot Magician a partir del punto indicado."""
+def start_drawing(req: Optional[StartDrawingRequest] = None):
+    """Confirma el boceto e inicia el dibujo en el Dobot Magician a partir del punto indicado, conservando Z."""
     mgr = get_manager()
     try:
-        res = mgr.start_drawing()
+        ox = req.origin_x if req else None
+        oy = req.origin_y if req else None
+        oz_draw = req.origin_z_draw if req else None
+        oz_hover = req.origin_z_hover if req else None
+
+        res = mgr.start_drawing(
+            origin_x=ox,
+            origin_y=oy,
+            origin_z_draw=oz_draw,
+            origin_z_hover=oz_hover
+        )
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
